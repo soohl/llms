@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+MODEL_ROOT="$ROOT/models/DeepSeek-V4-Flash-0731"
+GGUF_ROOT="$MODEL_ROOT/gguf"
+DS4_ROOT="$ROOT/backends/ds4"
+RUNTIME_ROOT="$MODEL_ROOT/.runtime"
+
+DS4_REPO=https://github.com/antirez/ds4.git
+DS4_REVISION=84cc882352757baf628a1776badf7cc54d584e28
+HF_REPO=antirez/deepseek-v4-gguf
+Q4_FILE=DeepSeek-V4-Flash-Q4KExperts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-imatrix-0731.gguf
+MXFP4_FILE=DeepSeek-V4-Flash-MXFP4Experts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-mxfp4-0731.gguf
+Q4_SIZE=164633502592
+MXFP4_SIZE=155976458848
+
+usage() {
+    cat <<'HELP'
+Local LLM runner
+
+Usage:
+  ./llm list
+  ./llm setup <model> <backend>
+  ./llm download <model> <variant>
+  ./llm serve <model> <backend> [variant]
+  ./llm benchmark <model> <backend> [variant]
+
+Available now:
+  model:    deepseek (DeepSeek-V4-Flash-0731)
+  backend:  ds4
+  variants: q4, mxfp4 (default)
+
+The server command applies the tuned defaults recorded in the model README.
+HELP
+}
+
+resolve_model() {
+    value=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    case "$value" in
+        d|de|deep*|deepseek-v4-flash-0731) printf '%s\n' deepseek ;;
+        *) printf 'Unknown model: %s\n' "$1" >&2; exit 2 ;;
+    esac
+}
+
+resolve_backend() {
+    value=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    case "$value" in
+        d|ds|ds4) printf '%s\n' ds4 ;;
+        l|llama|llamacpp|llama.cpp|llama-cpp)
+            printf 'llama.cpp is not configured for this model yet.\n' >&2
+            exit 2
+            ;;
+        *) printf 'Unknown backend: %s\n' "$1" >&2; exit 2 ;;
+    esac
+}
+
+resolve_variant() {
+    value=$(printf '%s' "${1:-mxfp4}" | tr '[:upper:]' '[:lower:]')
+    case "$value" in
+        q|q4) printf '%s\n' q4 ;;
+        m|mx|mxfp4) printf '%s\n' mxfp4 ;;
+        *) printf 'Unknown variant: %s (use q4 or mxfp4)\n' "$1" >&2; exit 2 ;;
+    esac
+}
+
+variant_file() {
+    case "$1" in
+        q4) printf '%s\n' "$Q4_FILE" ;;
+        mxfp4) printf '%s\n' "$MXFP4_FILE" ;;
+    esac
+}
+
+variant_size() {
+    case "$1" in
+        q4) printf '%s\n' "$Q4_SIZE" ;;
+        mxfp4) printf '%s\n' "$MXFP4_SIZE" ;;
+    esac
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || {
+        printf 'Required command not found: %s\n' "$1" >&2
+        exit 1
+    }
+}
+
+require_macos() {
+    if [ "$(uname -s)" != Darwin ]; then
+        printf 'The current DS4 profile requires macOS with Apple Metal.\n' >&2
+        exit 1
+    fi
+}
+
+setup_ds4() {
+    require_macos
+    require_command git
+    require_command make
+    require_command cc
+
+    mkdir -p "$ROOT/backends"
+    if [ ! -d "$DS4_ROOT/.git" ]; then
+        git clone "$DS4_REPO" "$DS4_ROOT"
+    fi
+
+    current=$(git -C "$DS4_ROOT" rev-parse HEAD)
+    if [ "$current" != "$DS4_REVISION" ]; then
+        if ! git -C "$DS4_ROOT" diff --quiet ||
+           ! git -C "$DS4_ROOT" diff --cached --quiet; then
+            printf 'Refusing to change modified checkout: %s\n' "$DS4_ROOT" >&2
+            exit 1
+        fi
+        git -C "$DS4_ROOT" fetch origin "$DS4_REVISION"
+        git -C "$DS4_ROOT" checkout --detach "$DS4_REVISION"
+    fi
+    make -C "$DS4_ROOT"
+}
+
+download_model() {
+    variant=$1
+    file=$(variant_file "$variant")
+    expected_size=$(variant_size "$variant")
+    path="$GGUF_ROOT/$file"
+    mkdir -p "$GGUF_ROOT"
+    if [ -e "$path" ]; then
+        actual_size=$(wc -c <"$path" | tr -d '[:space:]')
+        if [ "$actual_size" = "$expected_size" ]; then
+            printf 'Already downloaded and size verified: %s\n' "$path"
+            return
+        fi
+        printf 'Model file has the wrong size: %s\n' "$path" >&2
+        printf 'Expected %s bytes, found %s. Remove it and retry.\n' \
+            "$expected_size" "$actual_size" >&2
+        exit 1
+    fi
+    require_command hf
+    args=(download "$HF_REPO" "$file" --repo-type model --local-dir "$GGUF_ROOT")
+    [ -z "${HF_TOKEN:-}" ] || args+=(--token "$HF_TOKEN")
+    hf "${args[@]}"
+
+    if [ ! -f "$path" ]; then
+        printf 'Download completed but the model file is missing: %s\n' "$path" >&2
+        exit 1
+    fi
+    actual_size=$(wc -c <"$path" | tr -d '[:space:]')
+    if [ "$actual_size" != "$expected_size" ]; then
+        printf 'Downloaded model has the wrong size: %s\n' "$path" >&2
+        printf 'Expected %s bytes, found %s.\n' "$expected_size" "$actual_size" >&2
+        exit 1
+    fi
+    printf 'Downloaded and size verified: %s\n' "$path"
+}
+
+require_ds4() {
+    require_macos
+    if [ ! -x "$DS4_ROOT/ds4-server" ] || [ ! -x "$DS4_ROOT/ds4-bench" ]; then
+        printf 'DS4 is not built. Run: ./llm setup deepseek ds4\n' >&2
+        exit 1
+    fi
+}
+
+model_path() {
+    variant=$1
+    path="$GGUF_ROOT/$(variant_file "$variant")"
+    if [ ! -f "$path" ]; then
+        printf 'Model is missing. Run: ./llm download deepseek %s\n' "$variant" >&2
+        exit 1
+    fi
+    printf '%s\n' "$path"
+}
+
+serve_ds4() {
+    variant=$1
+    require_ds4
+    model=$(model_path "$variant")
+
+    # Tuned M3 Ultra defaults. LLM_* variables are optional overrides.
+    ctx=${LLM_CTX:-65536}
+    prefill=${LLM_PREFILL_CHUNK:-8192}
+    host=${LLM_HOST:-127.0.0.1}
+    port=${LLM_PORT:-8000}
+    kv_mb=${LLM_KV_DISK_SPACE_MB:-32768}
+    cache="$RUNTIME_ROOT/ds4/$variant-kv-cache"
+    mkdir -p "$cache"
+
+    unset DS4_METAL_Q8_MV_NSG DS4_METAL_Q8_MV_ROWS
+    export DS4_METAL_MODEL_UNTRACKED=${DS4_METAL_MODEL_UNTRACKED:-1}
+    cd "$DS4_ROOT"
+    exec ./ds4-server \
+        --model "$model" --metal \
+        --host "$host" --port "$port" \
+        --ctx "$ctx" --prefill-chunk "$prefill" \
+        --kv-disk-dir "$cache" --kv-disk-space-mb "$kv_mb"
+}
+
+benchmark_ds4() {
+    variant=$1
+    require_ds4
+    model=$(model_path "$variant")
+
+    ctx_start=${LLM_BENCH_CTX_START:-128}
+    ctx_max=${LLM_BENCH_CTX_MAX:-8192}
+    generated=${LLM_BENCH_GEN_TOKENS:-128}
+    ctx_alloc=${LLM_BENCH_CTX_ALLOC:-$((ctx_max + generated + 1))}
+    step=${LLM_BENCH_STEP_MUL:-2}
+    prefill=${LLM_PREFILL_CHUNK:-8192}
+
+    unset DS4_METAL_Q8_MV_NSG DS4_METAL_Q8_MV_ROWS
+    export DS4_METAL_MODEL_UNTRACKED=${DS4_METAL_MODEL_UNTRACKED:-1}
+    cd "$DS4_ROOT"
+    exec ./ds4-bench \
+        --model "$model" --metal \
+        --prompt-file "$ROOT/benchmark/prompts/promessi-sposi.txt" \
+        --ctx-start "$ctx_start" --ctx-max "$ctx_max" \
+        --ctx-alloc "$ctx_alloc" --step-mul "$step" \
+        --prefill-chunk "$prefill" --gen-tokens "$generated"
+}
+
+command=${1:-help}
+case "$command" in
+    help|-h|--help) usage ;;
+    list)
+        printf '%-12s %-10s %-20s %s\n' MODEL BACKEND VARIANTS RESULTS
+        printf '%-12s %-10s %-20s %s\n' deepseek ds4 'q4, mxfp4 (default)' 'models/DeepSeek-V4-Flash-0731/BENCHMARK.md'
+        ;;
+    setup)
+        [ "$#" -eq 3 ] || { usage >&2; exit 2; }
+        resolve_model "$2" >/dev/null
+        backend=$(resolve_backend "$3")
+        case "$backend" in ds4) setup_ds4 ;; esac
+        ;;
+    download)
+        [ "$#" -eq 3 ] || {
+            printf 'Download requires an explicit variant.\n\n' >&2
+            usage >&2
+            exit 2
+        }
+        resolve_model "$2" >/dev/null
+        download_model "$(resolve_variant "$3")"
+        ;;
+    serve)
+        [ "$#" -ge 3 ] && [ "$#" -le 4 ] || { usage >&2; exit 2; }
+        resolve_model "$2" >/dev/null
+        backend=$(resolve_backend "$3")
+        variant=$(resolve_variant "${4:-}")
+        case "$backend" in ds4) serve_ds4 "$variant" ;; esac
+        ;;
+    benchmark)
+        [ "$#" -ge 3 ] && [ "$#" -le 4 ] || { usage >&2; exit 2; }
+        resolve_model "$2" >/dev/null
+        backend=$(resolve_backend "$3")
+        variant=$(resolve_variant "${4:-}")
+        case "$backend" in ds4) benchmark_ds4 "$variant" ;; esac
+        ;;
+    *) printf 'Unknown command: %s\n\n' "$command" >&2; usage >&2; exit 2 ;;
+esac

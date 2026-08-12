@@ -1,1 +1,12 @@
 .DS_Store
+
+# Model weights are local artifacts. Each model directory documents how to
+# download them and keeps the directory itself with a tracked .gitkeep file.
+**/gguf/*
+!**/gguf/.gitkeep
+
+# Local server runtime state.
+**/.runtime/
+
+# Backends are shared external checkouts created by `./llm setup`.
+/backends/
