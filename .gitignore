@@ -9,4 +9,5 @@
 **/.runtime/
 
 # Backends are shared external checkouts created by `./llm setup`.
-/backends/
+/backends/*
+!/backends/.gitkeep
