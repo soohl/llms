@@ -46,12 +46,15 @@ checkout_backend() {
 
 primary_model_file() {
     wanted=$1
-    while IFS='|' read -r variant kind file _; do
-        if [ "$variant" = "$wanted" ] && [ "$kind" = target ]; then
-            printf '%s\n' "$file"
-            return
-        fi
-    done <<<"$DOWNLOADS"
+    key=$(printf '%s' "$wanted" |
+        tr '[:lower:]-.' '[:upper:]__' |
+        tr -c '[:alnum:]_' '_')
+    file_name="DOWNLOAD_${key}_FILE"
+    file=${!file_name:-}
+    [ -z "$file" ] || {
+        printf '%s\n' "$file"
+        return
+    }
     printf 'No model file configured for variant: %s\n' "$wanted" >&2
     exit 1
 }

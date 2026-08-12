@@ -29,7 +29,9 @@ variables override them.
 
 Use `--speculative on|off` for serving. Benchmarks also accept
 `--speculative compare` to report target-only and model-specific speculative
-decoding over `benchmark/prompts/speculative.json`.
+decoding over `benchmark/prompts/speculative.json`. Backend adapters own the
+runtime details; the top-level `llm` command discovers configuration variables
+dynamically and contains no backend-specific variable list.
 
 ## Models
 
@@ -57,6 +59,14 @@ hard-coded in `llm`. Add a model by copying
 type also needs config under `backends/config/` and an adapter under
 `backends/scripts/`. Model settings use backend prefixes such as `LLAMACPP_*`
 and `DS4_*`; portable runtime overrides retain the `LLM_*` prefix.
+
+Downloads use one variable per field. The variant name is uppercased and
+non-alphanumeric characters become underscores: variant `q4-k-m`, for example,
+uses `DOWNLOAD_Q4_K_M_FILE` and `DOWNLOAD_Q4_K_M_SIZE`. Optional speculative
+artifacts shared by all variants use `DOWNLOAD_SPECULATIVE_FILE` and
+`DOWNLOAD_SPECULATIVE_SIZE`; a variant can override them with, for example,
+`DOWNLOAD_Q4_K_M_SPECULATIVE_FILE` and
+`DOWNLOAD_Q4_K_M_SPECULATIVE_SIZE`.
 
 `setup` creates ignored source/build trees under `backends/`; `download` stores
 ignored weights under each model's `gguf/`. Temporary download and runtime

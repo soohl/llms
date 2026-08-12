@@ -34,5 +34,14 @@ Overrides: `LLM_CTX`, `LLM_PREFILL_CHUNK`, `LLM_HOST`, `LLM_PORT`, and
 `LLM_KV_DISK_SPACE_MB`.
 
 Only DS4/Metal is supported. DSpark defaults off; serving accepts
-`--speculative on`. The pinned `ds4-bench` supports target-only benchmarks.
-SSD expert streaming is disabled. See [BENCHMARK.md](BENCHMARK.md) for results.
+`--speculative on`. The MXFP4 comparison found DSpark slower on the current
+three-prompt suite, so opt in only when it benefits your workload.
+`ds4-bench` provides target-only context sweeps; `--speculative compare` uses
+the native CLI and reports DSpark throughput and acceptance. Benchmark
+overrides are
+`LLM_BENCH_CTX_START`, `LLM_BENCH_CTX_MAX`, `LLM_BENCH_CTX_ALLOC`,
+`LLM_BENCH_STEP_MUL`, `LLM_BENCH_STEP_INCR`, `LLM_BENCH_GEN_TOKENS`, and
+`LLM_BENCH_CSV`; the speculative comparison also accepts
+`LLM_BENCH_SPECULATIVE_CTX` and `LLM_SPECULATIVE_CONFIDENCE`. SSD expert
+streaming is disabled. See
+[BENCHMARK.md](BENCHMARK.md) for results.

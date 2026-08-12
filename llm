@@ -9,48 +9,56 @@ model_configs() {
         -type f -name model.conf -print | sort
 }
 
+CONFIG_VARIABLES=
+
 clear_model_config() {
-    unset MODEL_ID MODEL_NAME
-    unset BACKEND
-    unset LLAMACPP_REPO LLAMACPP_REVISION LLAMACPP_BUILD_NUMBER LLAMACPP_OS
-    unset LLAMACPP_CUDA_ROOT LLAMACPP_CUDA_ARCHITECTURE
-    unset DS4_REPO DS4_REVISION DS4_OS
-    unset TARGET_HF_REPO SPECULATIVE_HF_REPO
-    unset VARIANTS DEFAULT_VARIANT DOWNLOADS
-    unset LLAMACPP_CONTEXT LLAMACPP_BATCH LLAMACPP_UBATCH LLAMACPP_THREADS
-    unset LLAMACPP_CACHE_TYPE LLAMACPP_DEVICE LLAMACPP_GPU_LAYERS
-    unset LLAMACPP_JINJA LLAMACPP_TEMPERATURE LLAMACPP_TOP_P LLAMACPP_TOP_K
-    unset LLAMACPP_REASONING_STRENGTH LLAMACPP_SPECULATIVE_TYPE
-    unset LLAMACPP_SPECULATIVE_DEFAULT LLAMACPP_SPECULATIVE_FILE
-    unset LLAMACPP_SPECULATIVE_GPU_LAYERS LLAMACPP_SPECULATIVE_BATCH
-    unset LLAMACPP_SPECULATIVE_UBATCH LLAMACPP_SPECULATIVE_MAX_TOKENS
-    unset DS4_CONTEXT DS4_PREFILL_CHUNK DS4_KV_DISK_SPACE_MB
-    unset DS4_SPECULATIVE_TYPE DS4_SPECULATIVE_DEFAULT
-    unset DS4_SPECULATIVE_FILE DS4_SPECULATIVE_CONFIDENCE
+    for name in $CONFIG_VARIABLES; do
+        unset "$name"
+    done
+    CONFIG_VARIABLES=
+}
+
+source_config() {
+    config=$1
+    names=$(awk '
+        /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=/ {
+            name = $0
+            sub(/^[[:space:]]*/, "", name)
+            sub(/=.*/, "", name)
+            print name
+        }
+    ' "$config")
+    CONFIG_VARIABLES="${CONFIG_VARIABLES}${CONFIG_VARIABLES:+ }$(
+        printf '%s\n' "$names" | tr '\n' ' '
+    )"
+    set -a
+    # Config files are tracked, repository-owned shell data files.
+    # shellcheck disable=SC1090
+    . "$config"
+    set +a
 }
 
 load_model_config() {
     MODEL_DIR=$1
     clear_model_config
-    set -a
-    # model.conf is a tracked, repository-owned shell data file.
-    # shellcheck disable=SC1090
-    . "$MODEL_DIR/model.conf"
+    source_config "$MODEL_DIR/model.conf"
     backend_config="$ROOT/backends/config/${BACKEND:-}.conf"
     [ -f "$backend_config" ] || {
         printf 'Backend config is missing: %s\n' "$backend_config" >&2
         exit 1
     }
-    # shellcheck disable=SC1090
-    . "$backend_config"
-    set +a
+    source_config "$backend_config"
 
     for required in MODEL_ID MODEL_NAME BACKEND TARGET_HF_REPO VARIANTS \
-        DEFAULT_VARIANT DOWNLOADS; do
+        DEFAULT_VARIANT; do
         [ -n "${!required:-}" ] || {
             printf 'Missing %s in %s/model.conf\n' "$required" "$MODEL_DIR" >&2
             exit 1
         }
+    done
+    for variant in $VARIANTS; do
+        download_config "$variant" target >/dev/null
+        download_config "$variant" speculative >/dev/null || true
     done
 
     GGUF_ROOT="$MODEL_DIR/gguf"
@@ -137,62 +145,105 @@ require_command() {
     }
 }
 
+download_key() {
+    printf '%s' "$1" |
+        tr '[:lower:]-.' '[:upper:]__' |
+        tr -c '[:alnum:]_' '_'
+}
+
+download_config() {
+    variant=$1
+    kind=$2
+    key=$(download_key "$variant")
+    case "$kind" in
+        target) prefix="DOWNLOAD_${key}" ;;
+        speculative)
+            prefix="DOWNLOAD_${key}_SPECULATIVE"
+            variant_file_name="${prefix}_FILE"
+            variant_size_name="${prefix}_SIZE"
+            if [ -z "${!variant_file_name:-}" ] &&
+               [ -z "${!variant_size_name:-}" ]; then
+                prefix=DOWNLOAD_SPECULATIVE
+            fi
+            ;;
+        *)
+            printf 'Invalid download kind: %s\n' "$kind" >&2
+            exit 2
+            ;;
+    esac
+
+    file_name="${prefix}_FILE"
+    size_name="${prefix}_SIZE"
+    file=${!file_name:-}
+    expected_size=${!size_name:-}
+    if [ -z "$file" ] && [ -z "$expected_size" ]; then
+        return 1
+    fi
+    if [ -z "$file" ] || [ -z "$expected_size" ]; then
+        printf 'Incomplete %s download config for variant %s in %s/model.conf\n' \
+            "$kind" "$variant" "$MODEL_DIR" >&2
+        exit 1
+    fi
+    case "$expected_size" in
+        *[!0-9]*|'')
+            printf 'Invalid %s in %s/model.conf: %s\n' \
+                "$size_name" "$MODEL_DIR" "$expected_size" >&2
+            exit 1
+            ;;
+    esac
+    printf '%s|%s\n' "$file" "$expected_size"
+}
+
 download_model() {
     wanted=$1
     wanted_kind=${2:-target}
     mkdir -p "$GGUF_ROOT"
-    found=0
-    while IFS='|' read -r variant kind file expected_size; do
-        [ "$variant" = "$wanted" ] || continue
-        [ "$kind" = "$wanted_kind" ] || continue
-        found=1
-        path="$GGUF_ROOT/$file"
-        if [ -e "$path" ]; then
-            actual_size=$(wc -c <"$path" | tr -d '[:space:]')
-            [ "$actual_size" = "$expected_size" ] || {
-                printf 'Model file has the wrong size: %s\n' "$path" >&2
-                printf 'Expected %s bytes, found %s.\n' \
-                    "$expected_size" "$actual_size" >&2
-                exit 1
-            }
-            printf 'Already downloaded and size verified: %s\n' "$path"
-            continue
-        fi
-
-        require_command hf
-        cache_dir="$RUNTIME_ROOT/huggingface"
-        mkdir -p "$cache_dir"
-        repo=$TARGET_HF_REPO
-        speculative_file=${LLAMACPP_SPECULATIVE_FILE:-${DS4_SPECULATIVE_FILE:-}}
-        if [ -n "${SPECULATIVE_HF_REPO:-}" ] &&
-           [ "$file" = "$speculative_file" ]; then
-            repo=$SPECULATIVE_HF_REPO
-        fi
-        args=(
-            download "$repo" "$file"
-            --repo-type model
-            --local-dir "$GGUF_ROOT"
-        )
-        [ -z "${HF_TOKEN:-}" ] || args+=(--token "$HF_TOKEN")
-        printf 'Downloading %s file: %s/%s\n' "$kind" "$repo" "$file"
-        HF_HOME="$cache_dir" hf "${args[@]}"
-        [ -f "$path" ] || {
-            printf 'Download completed but the model file is missing: %s\n' \
-                "$path" >&2
-            exit 1
-        }
-        actual_size=$(wc -c <"$path" | tr -d '[:space:]')
-        [ "$actual_size" = "$expected_size" ] || {
-            printf 'Downloaded model has the wrong size: %s\n' "$path" >&2
-            exit 1
-        }
-        printf 'Downloaded and size verified: %s\n' "$path"
-    done <<<"$DOWNLOADS"
-    [ "$found" = 1 ] || {
+    config=$(download_config "$wanted" "$wanted_kind") || {
         printf 'No %s download configured for variant: %s\n' \
             "$wanted_kind" "$wanted" >&2
         exit 1
     }
+    IFS='|' read -r file expected_size <<<"$config"
+    path="$GGUF_ROOT/$file"
+    if [ -e "$path" ]; then
+        actual_size=$(wc -c <"$path" | tr -d '[:space:]')
+        [ "$actual_size" = "$expected_size" ] || {
+            printf 'Model file has the wrong size: %s\n' "$path" >&2
+            printf 'Expected %s bytes, found %s.\n' \
+                "$expected_size" "$actual_size" >&2
+            exit 1
+        }
+        printf 'Already downloaded and size verified: %s\n' "$path"
+        return
+    fi
+
+    require_command hf
+    cache_dir="$RUNTIME_ROOT/huggingface"
+    mkdir -p "$cache_dir"
+    repo=$TARGET_HF_REPO
+    if [ "$wanted_kind" = speculative ] &&
+       [ -n "${SPECULATIVE_HF_REPO:-}" ]; then
+        repo=$SPECULATIVE_HF_REPO
+    fi
+    args=(
+        download "$repo" "$file"
+        --repo-type model
+        --local-dir "$GGUF_ROOT"
+    )
+    [ -z "${HF_TOKEN:-}" ] || args+=(--token "$HF_TOKEN")
+    printf 'Downloading %s file: %s/%s\n' "$wanted_kind" "$repo" "$file"
+    HF_HOME="$cache_dir" hf "${args[@]}"
+    [ -f "$path" ] || {
+        printf 'Download completed but the model file is missing: %s\n' \
+            "$path" >&2
+        exit 1
+    }
+    actual_size=$(wc -c <"$path" | tr -d '[:space:]')
+    [ "$actual_size" = "$expected_size" ] || {
+        printf 'Downloaded model has the wrong size: %s\n' "$path" >&2
+        exit 1
+    }
+    printf 'Downloaded and size verified: %s\n' "$path"
     rm -rf "$GGUF_ROOT/.cache/huggingface"
     rmdir "$GGUF_ROOT/.cache" 2>/dev/null || true
 }
