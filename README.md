@@ -1,100 +1,70 @@
-# Local LLM Inventory
+# Local LLM Directory
 
-A clean inventory of local models, their GGUF files, tuned inference backends,
-and comparable benchmark results. Model weights and backend source trees stay
-local; configuration, documentation, and selected results stay in Git.
+A local directory of GGUF models, tuned backends, and comparable benchmarks.
+Weights and backend checkouts stay untracked.
 
-## Interface
-
-One script handles the repository:
+## Commands
 
 ```sh
 ./llm list
 ./llm setup <model> <backend>
 ./llm download <model> <variant>
+./llm download <model> <variant> --speculative
 ./llm serve <model> <backend> [variant]
 ./llm benchmark <model> <backend> [variant]
 ```
 
-Short names work, so the current model can be started with:
+Muse example:
 
 ```sh
-./llm setup deepseek ds4
-./llm download deepseek mxfp4
-./llm serve deepseek ds4
+./llm setup muse-glimmer-30b llamacpp
+./llm download muse-glimmer-30b kquant-17gb
+./llm download muse-glimmer-30b kquant-17gb --speculative
+./llm serve muse-glimmer-30b llamacpp
+./llm benchmark muse-glimmer-30b llamacpp
 ```
 
-DeepSeek serving and benchmarking default to `mxfp4`. Downloads always require
-an explicit `mxfp4` or `q4` variant to prevent accidental 150+ GB downloads.
+`serve` uses tuned values from the model's `model.conf`. `LLM_*` environment
+variables override them.
 
-`serve` applies the best known tuning for that exact model/backend combination.
-`LLM_*` environment variables can override it for experiments.
+Use `--speculative on|off` for serving. Benchmarks also accept
+`--speculative compare` to report target-only and model-specific speculative
+decoding over `benchmark/prompts/speculative.json`.
 
-## Requirements
+## Models
 
-The current tested combination requires:
-
-- Apple Silicon macOS with enough memory for the selected model (256 GiB for
-  the tuned resident DeepSeek profile);
-- Git, Make, and a C compiler (install Apple's Xcode Command Line Tools with
-  `xcode-select --install` if needed);
-- the Hugging Face CLI for model downloads (`brew install hf`); and
-- roughly 165 GB of free disk space per GGUF, plus backend build and cache
-  space.
-
-Public files do not require authentication. Set `HF_TOKEN` if Hugging Face
-requires authentication in your environment.
-
-## Inventory
-
-| Model | GGUF variants | Tested backend | Results | Guide |
+| Model | Variant | Backend | Hardware | Docs |
 | --- | --- | --- | --- | --- |
-| DeepSeek V4 Flash 0731 | `q4`, `mxfp4` | `ds4` | [BENCHMARK.md](models/DeepSeek-V4-Flash-0731/BENCHMARK.md) | [README](models/DeepSeek-V4-Flash-0731/README.md) |
+| DeepSeek V4 Flash 0731 | `q4`, `mxfp4` | `ds4` | Apple M3 Ultra, 256 GiB | [Guide](models/DeepSeek-V4-Flash-0731/README.md) · [Results](models/DeepSeek-V4-Flash-0731/BENCHMARK.md) |
+| Muse Glimmer 30B | `kquant-17gb` + DFlash | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Muse-Glimmer-30B/README.md) · [Results](models/Muse-Glimmer-30B/BENCHMARK.md) |
+| Qwen3.6 27B | `q4-k-m` | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.6-27B/README.md) · [Results](models/Qwen3.6-27B/BENCHMARK.md) |
 
-`llama.cpp` is planned for DeepSeek but is not marked supported until a working,
-tuned server profile and comparable benchmark exist.
-
-## Structure
+## Layout
 
 ```text
-.
-├── llm
-├── backends/
-│   ├── ds4/                         ignored shared backend checkout
-│   └── llamacpp/                    added once supported
-├── benchmark/prompts/               shared benchmark input
-└── models/
-    └── <Model-Name>/
-        ├── README.md                sources, support and tuning
-        ├── BENCHMARK.md             results grouped by backend
-        └── gguf/                    ignored model files
+backends/scripts/       backend setup, serve, and benchmark adapters
+backends/config/        pinned backend revisions and build settings
+benchmark/prompts/      shared benchmark input
+benchmark/scripts/      benchmark helpers
+models/<Model>/         model.conf, docs, results, and ignored gguf/
+llm                     model discovery and command dispatch
 ```
 
-Each model has one readable benchmark document with a section for each tested
-backend. The benchmark command prints results to the terminal and creates no
-result artifact. An agent can copy a representative result into `BENCHMARK.md`.
+Models are discovered from `models/*/model.conf`; model paths are not
+hard-coded in `llm`. Add a model by copying
+[`TEMPLATE_MODEL.conf`](models/TEMPLATE_MODEL.conf) and
+[`TEMPLATE_README.md`](models/TEMPLATE_README.md). A new backend
+type also needs config under `backends/config/` and an adapter under
+`backends/scripts/`. Model settings use backend prefixes such as `LLAMACPP_*`
+and `DS4_*`; portable runtime overrides retain the `LLM_*` prefix.
 
-## Common benchmark
+`setup` creates ignored source/build trees under `backends/`; `download` stores
+ignored weights under each model's `gguf/`. Temporary download and runtime
+caches stay in ignored local directories.
 
-The default benchmark is a greedy, single-stream context sweep over the shared
-`benchmark/prompts/promessi-sposi.txt` input:
+## Benchmark
 
-| Setting | Default |
-| --- | ---: |
-| Context range | 128–8,192 tokens |
-| Step multiplier | 2 |
-| Generated tokens | 128 |
-| Prefill chunk | 8,192 tokens |
-
-Use the same workload for every supported model/backend combination. Summaries
-must expose context, prefill throughput, generated tokens, and decode
-throughput. Hardware, backend revision, and deviations from the common workload
-belong in `BENCHMARK.md`.
-
-## Adding a model or backend
-
-Use [`models/MODEL_README.template.md`](models/MODEL_README.template.md) for
-every model README. Add `models/<Model-Name>/gguf/` and reuse a checkout under
-root `backends/`. Then add the small model/backend case to `llm`, including
-pinned setup, tuned server arguments, and the common benchmark command. Do not
-add separate launchers or raw result files.
+The common benchmark is a greedy single-stream sweep over
+`benchmark/prompts/promessi-sposi.txt`: 128–8,192 prompt tokens, doubling each
+step, with 128 generated tokens. Each server profile receives one short warm-up
+request. Commands print results and create no artifact.

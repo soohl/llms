@@ -1,0 +1,35 @@
+# Qwen3.6 27B
+
+Dense coding and reasoning model using the official Q4_K_M GGUF. The 19.1 GB
+quant leaves enough of the RTX 4090's 24 GB VRAM for an 8,192-token F16 KV
+cache. This profile is text-only.
+
+## Sources
+
+- [Official model](https://huggingface.co/Qwen/Qwen3.6-27B)
+- [Official GGUF](https://huggingface.co/ggml-org/Qwen3.6-27B-GGUF)
+- [DFlash drafter GGUF](https://huggingface.co/Alittlehammmer/Qwen3.6-27B-DFlash-GGUF-llama.cpp)
+- [llama.cpp](https://github.com/ggml-org/llama.cpp)
+
+## File
+
+| Variant | Size | SHA-256 |
+| --- | ---: | --- |
+| `q4-k-m` | 19,095,766,304 | `65b753ea835627f7b511143c6ceb976525c7f21f5df8c664bc0a9c23d1c49921` |
+| DFlash Q8_0 drafter | 1,849,481,440 | `23b6c8ebcc51b3b4107709342fd2960167e88397af36e394923b8d5895ddf7ea` |
+
+## Run
+
+```sh
+./llm setup qwen3.6-27b llamacpp
+./llm download qwen3.6-27b q4-k-m
+./llm download qwen3.6-27b q4-k-m --speculative
+./llm serve qwen3.6-27b llamacpp q4-k-m
+./llm benchmark qwen3.6-27b llamacpp q4-k-m
+```
+
+Defaults: 8,192 context, full target CUDA offload, Flash Attention, F16 KV, and
+the official thinking-mode sampling values. The tested server used 19,150 MiB
+VRAM, while DFlash used 20,702 MiB. DFlash is enabled by default, averages
+1.60x in the prompt suite, and can be disabled with `--speculative off`. See
+[BENCHMARK.md](BENCHMARK.md).

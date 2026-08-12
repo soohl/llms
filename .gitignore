@@ -1,4 +1,7 @@
 .DS_Store
+__pycache__/
+*.py[cod]
+.cache/
 
 # Model weights are local artifacts. Each model directory documents how to
 # download them and keeps the directory itself with a tracked .gitkeep file.
@@ -11,3 +14,7 @@
 # Backends are shared external checkouts created by `./llm setup`.
 /backends/*
 !/backends/.gitkeep
+!/backends/config/
+!/backends/config/*.conf
+!/backends/scripts/
+!/backends/scripts/*.sh

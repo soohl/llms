@@ -3,18 +3,115 @@
 set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-MODEL_ROOT="$ROOT/models/DeepSeek-V4-Flash-0731"
-GGUF_ROOT="$MODEL_ROOT/gguf"
-DS4_ROOT="$ROOT/backends/ds4"
-RUNTIME_ROOT="$MODEL_ROOT/.runtime"
 
-DS4_REPO=https://github.com/antirez/ds4.git
-DS4_REVISION=84cc882352757baf628a1776badf7cc54d584e28
-HF_REPO=antirez/deepseek-v4-gguf
-Q4_FILE=DeepSeek-V4-Flash-Q4KExperts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-imatrix-0731.gguf
-MXFP4_FILE=DeepSeek-V4-Flash-MXFP4Experts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-mxfp4-0731.gguf
-Q4_SIZE=164633502592
-MXFP4_SIZE=155976458848
+model_configs() {
+    find "$ROOT/models" -mindepth 2 -maxdepth 2 \
+        -type f -name model.conf -print | sort
+}
+
+clear_model_config() {
+    unset MODEL_ID MODEL_NAME
+    unset BACKEND
+    unset LLAMACPP_REPO LLAMACPP_REVISION LLAMACPP_BUILD_NUMBER LLAMACPP_OS
+    unset LLAMACPP_CUDA_ROOT LLAMACPP_CUDA_ARCHITECTURE
+    unset DS4_REPO DS4_REVISION DS4_OS
+    unset TARGET_HF_REPO SPECULATIVE_HF_REPO
+    unset VARIANTS DEFAULT_VARIANT DOWNLOADS
+    unset LLAMACPP_CONTEXT LLAMACPP_BATCH LLAMACPP_UBATCH LLAMACPP_THREADS
+    unset LLAMACPP_CACHE_TYPE LLAMACPP_DEVICE LLAMACPP_GPU_LAYERS
+    unset LLAMACPP_JINJA LLAMACPP_TEMPERATURE LLAMACPP_TOP_P LLAMACPP_TOP_K
+    unset LLAMACPP_REASONING_STRENGTH LLAMACPP_SPECULATIVE_TYPE
+    unset LLAMACPP_SPECULATIVE_DEFAULT LLAMACPP_SPECULATIVE_FILE
+    unset LLAMACPP_SPECULATIVE_GPU_LAYERS LLAMACPP_SPECULATIVE_BATCH
+    unset LLAMACPP_SPECULATIVE_UBATCH LLAMACPP_SPECULATIVE_MAX_TOKENS
+    unset DS4_CONTEXT DS4_PREFILL_CHUNK DS4_KV_DISK_SPACE_MB
+    unset DS4_SPECULATIVE_TYPE DS4_SPECULATIVE_DEFAULT
+    unset DS4_SPECULATIVE_FILE DS4_SPECULATIVE_CONFIDENCE
+}
+
+load_model_config() {
+    MODEL_DIR=$1
+    clear_model_config
+    set -a
+    # model.conf is a tracked, repository-owned shell data file.
+    # shellcheck disable=SC1090
+    . "$MODEL_DIR/model.conf"
+    backend_config="$ROOT/backends/config/${BACKEND:-}.conf"
+    [ -f "$backend_config" ] || {
+        printf 'Backend config is missing: %s\n' "$backend_config" >&2
+        exit 1
+    }
+    # shellcheck disable=SC1090
+    . "$backend_config"
+    set +a
+
+    for required in MODEL_ID MODEL_NAME BACKEND TARGET_HF_REPO VARIANTS \
+        DEFAULT_VARIANT DOWNLOADS; do
+        [ -n "${!required:-}" ] || {
+            printf 'Missing %s in %s/model.conf\n' "$required" "$MODEL_DIR" >&2
+            exit 1
+        }
+    done
+
+    GGUF_ROOT="$MODEL_DIR/gguf"
+    RUNTIME_ROOT="$MODEL_DIR/.runtime"
+    BACKEND_ROOT="$ROOT/backends/$BACKEND"
+    BACKEND_ADAPTER="$ROOT/backends/scripts/$BACKEND.sh"
+}
+
+resolve_model_dir() {
+    requested=$1
+    while IFS= read -r config; do
+        dir=${config%/model.conf}
+        load_model_config "$dir"
+        if [ "$requested" = "$MODEL_ID" ]; then
+            printf '%s\n' "$dir"
+            return
+        fi
+    done < <(model_configs)
+    printf 'Unknown model: %s\n' "$requested" >&2
+    exit 2
+}
+
+resolve_backend() {
+    requested=$1
+    [ "$requested" = "$BACKEND" ] && return
+    printf 'Backend %s is not configured for %s (use %s).\n' \
+        "$requested" "$MODEL_NAME" "$BACKEND" >&2
+    exit 2
+}
+
+resolve_variant() {
+    requested=${1:-$DEFAULT_VARIANT}
+    for variant in $VARIANTS; do
+        if [ "$requested" = "$variant" ]; then
+            printf '%s\n' "$variant"
+            return
+        fi
+    done
+    printf 'Unknown variant: %s (use %s)\n' "$requested" "$VARIANTS" >&2
+    exit 2
+}
+
+variant_display() {
+    result=
+    for variant in $VARIANTS; do
+        [ -z "$result" ] || result="$result, "
+        result="$result$variant"
+        [ "$variant" != "$DEFAULT_VARIANT" ] || result="$result (default)"
+    done
+    printf '%s\n' "$result"
+}
+
+list_models() {
+    printf '%-24s %-10s %-24s %s\n' MODEL BACKEND VARIANTS RESULTS
+    while IFS= read -r config; do
+        load_model_config "${config%/model.conf}"
+        result="models/${MODEL_DIR##*/}/BENCHMARK.md"
+        printf '%-24s %-10s %-24s %s\n' \
+            "$MODEL_ID" "$BACKEND" "$(variant_display)" "$result"
+    done < <(model_configs)
+}
 
 usage() {
     cat <<'HELP'
@@ -23,60 +120,14 @@ Local LLM runner
 Usage:
   ./llm list
   ./llm setup <model> <backend>
-  ./llm download <model> <variant>
-  ./llm serve <model> <backend> [variant]
-  ./llm benchmark <model> <backend> [variant]
+  ./llm download <model> <variant> [--speculative]
+  ./llm serve <model> <backend> [variant] [--speculative on|off]
+  ./llm benchmark <model> <backend> [variant] [--speculative off|on|compare]
 
-Available now:
-  model:    deepseek (DeepSeek-V4-Flash-0731)
-  backend:  ds4
-  variants: q4, mxfp4 (default)
-
-The server command applies the tuned defaults recorded in the model README.
+Models are discovered from models/*/model.conf.
 HELP
-}
-
-resolve_model() {
-    value=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
-    case "$value" in
-        d|de|deep*|deepseek-v4-flash-0731) printf '%s\n' deepseek ;;
-        *) printf 'Unknown model: %s\n' "$1" >&2; exit 2 ;;
-    esac
-}
-
-resolve_backend() {
-    value=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
-    case "$value" in
-        d|ds|ds4) printf '%s\n' ds4 ;;
-        l|llama|llamacpp|llama.cpp|llama-cpp)
-            printf 'llama.cpp is not configured for this model yet.\n' >&2
-            exit 2
-            ;;
-        *) printf 'Unknown backend: %s\n' "$1" >&2; exit 2 ;;
-    esac
-}
-
-resolve_variant() {
-    value=$(printf '%s' "${1:-mxfp4}" | tr '[:upper:]' '[:lower:]')
-    case "$value" in
-        q|q4) printf '%s\n' q4 ;;
-        m|mx|mxfp4) printf '%s\n' mxfp4 ;;
-        *) printf 'Unknown variant: %s (use q4 or mxfp4)\n' "$1" >&2; exit 2 ;;
-    esac
-}
-
-variant_file() {
-    case "$1" in
-        q4) printf '%s\n' "$Q4_FILE" ;;
-        mxfp4) printf '%s\n' "$MXFP4_FILE" ;;
-    esac
-}
-
-variant_size() {
-    case "$1" in
-        q4) printf '%s\n' "$Q4_SIZE" ;;
-        mxfp4) printf '%s\n' "$MXFP4_SIZE" ;;
-    esac
+    printf '\nAvailable now:\n'
+    list_models
 }
 
 require_command() {
@@ -86,172 +137,172 @@ require_command() {
     }
 }
 
-require_macos() {
-    if [ "$(uname -s)" != Darwin ]; then
-        printf 'The current DS4 profile requires macOS with Apple Metal.\n' >&2
-        exit 1
-    fi
-}
-
-setup_ds4() {
-    require_macos
-    require_command git
-    require_command make
-    require_command cc
-
-    mkdir -p "$ROOT/backends"
-    if [ ! -d "$DS4_ROOT/.git" ]; then
-        git clone "$DS4_REPO" "$DS4_ROOT"
-    fi
-
-    current=$(git -C "$DS4_ROOT" rev-parse HEAD)
-    if [ "$current" != "$DS4_REVISION" ]; then
-        if ! git -C "$DS4_ROOT" diff --quiet ||
-           ! git -C "$DS4_ROOT" diff --cached --quiet; then
-            printf 'Refusing to change modified checkout: %s\n' "$DS4_ROOT" >&2
-            exit 1
-        fi
-        git -C "$DS4_ROOT" fetch origin "$DS4_REVISION"
-        git -C "$DS4_ROOT" checkout --detach "$DS4_REVISION"
-    fi
-    make -C "$DS4_ROOT"
-}
-
 download_model() {
-    variant=$1
-    file=$(variant_file "$variant")
-    expected_size=$(variant_size "$variant")
-    path="$GGUF_ROOT/$file"
+    wanted=$1
+    wanted_kind=${2:-target}
     mkdir -p "$GGUF_ROOT"
-    if [ -e "$path" ]; then
-        actual_size=$(wc -c <"$path" | tr -d '[:space:]')
-        if [ "$actual_size" = "$expected_size" ]; then
+    found=0
+    while IFS='|' read -r variant kind file expected_size; do
+        [ "$variant" = "$wanted" ] || continue
+        [ "$kind" = "$wanted_kind" ] || continue
+        found=1
+        path="$GGUF_ROOT/$file"
+        if [ -e "$path" ]; then
+            actual_size=$(wc -c <"$path" | tr -d '[:space:]')
+            [ "$actual_size" = "$expected_size" ] || {
+                printf 'Model file has the wrong size: %s\n' "$path" >&2
+                printf 'Expected %s bytes, found %s.\n' \
+                    "$expected_size" "$actual_size" >&2
+                exit 1
+            }
             printf 'Already downloaded and size verified: %s\n' "$path"
-            return
+            continue
         fi
-        printf 'Model file has the wrong size: %s\n' "$path" >&2
-        printf 'Expected %s bytes, found %s. Remove it and retry.\n' \
-            "$expected_size" "$actual_size" >&2
-        exit 1
-    fi
-    require_command hf
-    args=(download "$HF_REPO" "$file" --repo-type model --local-dir "$GGUF_ROOT")
-    [ -z "${HF_TOKEN:-}" ] || args+=(--token "$HF_TOKEN")
-    hf "${args[@]}"
 
-    if [ ! -f "$path" ]; then
-        printf 'Download completed but the model file is missing: %s\n' "$path" >&2
+        require_command hf
+        cache_dir="$RUNTIME_ROOT/huggingface"
+        mkdir -p "$cache_dir"
+        repo=$TARGET_HF_REPO
+        speculative_file=${LLAMACPP_SPECULATIVE_FILE:-${DS4_SPECULATIVE_FILE:-}}
+        if [ -n "${SPECULATIVE_HF_REPO:-}" ] &&
+           [ "$file" = "$speculative_file" ]; then
+            repo=$SPECULATIVE_HF_REPO
+        fi
+        args=(
+            download "$repo" "$file"
+            --repo-type model
+            --local-dir "$GGUF_ROOT"
+        )
+        [ -z "${HF_TOKEN:-}" ] || args+=(--token "$HF_TOKEN")
+        printf 'Downloading %s file: %s/%s\n' "$kind" "$repo" "$file"
+        HF_HOME="$cache_dir" hf "${args[@]}"
+        [ -f "$path" ] || {
+            printf 'Download completed but the model file is missing: %s\n' \
+                "$path" >&2
+            exit 1
+        }
+        actual_size=$(wc -c <"$path" | tr -d '[:space:]')
+        [ "$actual_size" = "$expected_size" ] || {
+            printf 'Downloaded model has the wrong size: %s\n' "$path" >&2
+            exit 1
+        }
+        printf 'Downloaded and size verified: %s\n' "$path"
+    done <<<"$DOWNLOADS"
+    [ "$found" = 1 ] || {
+        printf 'No %s download configured for variant: %s\n' \
+            "$wanted_kind" "$wanted" >&2
         exit 1
-    fi
-    actual_size=$(wc -c <"$path" | tr -d '[:space:]')
-    if [ "$actual_size" != "$expected_size" ]; then
-        printf 'Downloaded model has the wrong size: %s\n' "$path" >&2
-        printf 'Expected %s bytes, found %s.\n' "$expected_size" "$actual_size" >&2
-        exit 1
-    fi
-    printf 'Downloaded and size verified: %s\n' "$path"
+    }
+    rm -rf "$GGUF_ROOT/.cache/huggingface"
+    rmdir "$GGUF_ROOT/.cache" 2>/dev/null || true
 }
 
-require_ds4() {
-    require_macos
-    if [ ! -x "$DS4_ROOT/ds4-server" ] || [ ! -x "$DS4_ROOT/ds4-bench" ]; then
-        printf 'DS4 is not built. Run: ./llm setup deepseek ds4\n' >&2
+run_backend() {
+    action=$1
+    variant=${2:-}
+    speculative=${3:-}
+    [ -x "$BACKEND_ADAPTER" ] || {
+        printf 'Backend adapter is missing: %s\n' "$BACKEND_ADAPTER" >&2
         exit 1
-    fi
+    }
+    export ROOT MODEL_DIR GGUF_ROOT RUNTIME_ROOT BACKEND_ROOT
+    exec "$BACKEND_ADAPTER" "$action" "$variant" "$speculative"
 }
 
-model_path() {
-    variant=$1
-    path="$GGUF_ROOT/$(variant_file "$variant")"
-    if [ ! -f "$path" ]; then
-        printf 'Model is missing. Run: ./llm download deepseek %s\n' "$variant" >&2
-        exit 1
-    fi
-    printf '%s\n' "$path"
+parse_run_args() {
+    [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+    RUN_VARIANT=
+    RUN_SPECULATIVE=
+    while [ "$#" -gt 2 ]; do
+        case "$3" in
+            --speculative)
+                [ "$#" -ge 4 ] || {
+                    printf 'Missing value for --speculative.\n' >&2
+                    exit 2
+                }
+                RUN_SPECULATIVE=$4
+                shift 2
+                ;;
+            --speculative=*)
+                RUN_SPECULATIVE=${3#*=}
+                shift
+                ;;
+            --*)
+                printf 'Unknown option: %s\n' "$3" >&2
+                exit 2
+                ;;
+            *)
+                [ -z "$RUN_VARIANT" ] || {
+                    printf 'Unexpected argument: %s\n' "$3" >&2
+                    exit 2
+                }
+                RUN_VARIANT=$3
+                shift
+                ;;
+        esac
+    done
 }
 
-serve_ds4() {
-    variant=$1
-    require_ds4
-    model=$(model_path "$variant")
-
-    # Tuned M3 Ultra defaults. LLM_* variables are optional overrides.
-    ctx=${LLM_CTX:-65536}
-    prefill=${LLM_PREFILL_CHUNK:-8192}
-    host=${LLM_HOST:-127.0.0.1}
-    port=${LLM_PORT:-8000}
-    kv_mb=${LLM_KV_DISK_SPACE_MB:-32768}
-    cache="$RUNTIME_ROOT/ds4/$variant-kv-cache"
-    mkdir -p "$cache"
-
-    unset DS4_METAL_Q8_MV_NSG DS4_METAL_Q8_MV_ROWS
-    export DS4_METAL_MODEL_UNTRACKED=${DS4_METAL_MODEL_UNTRACKED:-1}
-    cd "$DS4_ROOT"
-    exec ./ds4-server \
-        --model "$model" --metal \
-        --host "$host" --port "$port" \
-        --ctx "$ctx" --prefill-chunk "$prefill" \
-        --kv-disk-dir "$cache" --kv-disk-space-mb "$kv_mb"
-}
-
-benchmark_ds4() {
-    variant=$1
-    require_ds4
-    model=$(model_path "$variant")
-
-    ctx_start=${LLM_BENCH_CTX_START:-128}
-    ctx_max=${LLM_BENCH_CTX_MAX:-8192}
-    generated=${LLM_BENCH_GEN_TOKENS:-128}
-    ctx_alloc=${LLM_BENCH_CTX_ALLOC:-$((ctx_max + generated + 1))}
-    step=${LLM_BENCH_STEP_MUL:-2}
-    prefill=${LLM_PREFILL_CHUNK:-8192}
-
-    unset DS4_METAL_Q8_MV_NSG DS4_METAL_Q8_MV_ROWS
-    export DS4_METAL_MODEL_UNTRACKED=${DS4_METAL_MODEL_UNTRACKED:-1}
-    cd "$DS4_ROOT"
-    exec ./ds4-bench \
-        --model "$model" --metal \
-        --prompt-file "$ROOT/benchmark/prompts/promessi-sposi.txt" \
-        --ctx-start "$ctx_start" --ctx-max "$ctx_max" \
-        --ctx-alloc "$ctx_alloc" --step-mul "$step" \
-        --prefill-chunk "$prefill" --gen-tokens "$generated"
+select_model() {
+    MODEL_DIR=$(resolve_model_dir "$1")
+    load_model_config "$MODEL_DIR"
 }
 
 command=${1:-help}
 case "$command" in
-    help|-h|--help) usage ;;
+    help|-h|--help)
+        usage
+        ;;
     list)
-        printf '%-12s %-10s %-20s %s\n' MODEL BACKEND VARIANTS RESULTS
-        printf '%-12s %-10s %-20s %s\n' deepseek ds4 'q4, mxfp4 (default)' 'models/DeepSeek-V4-Flash-0731/BENCHMARK.md'
+        list_models
         ;;
     setup)
         [ "$#" -eq 3 ] || { usage >&2; exit 2; }
-        resolve_model "$2" >/dev/null
-        backend=$(resolve_backend "$3")
-        case "$backend" in ds4) setup_ds4 ;; esac
+        select_model "$2"
+        resolve_backend "$3" >/dev/null
+        run_backend setup
         ;;
     download)
-        [ "$#" -eq 3 ] || {
+        [ "$#" -eq 3 ] || [ "$#" -eq 4 ] || {
             printf 'Download requires an explicit variant.\n\n' >&2
             usage >&2
             exit 2
         }
-        resolve_model "$2" >/dev/null
-        download_model "$(resolve_variant "$3")"
+        download_kind=target
+        if [ "$#" -eq 4 ]; then
+            [ "$4" = --speculative ] || {
+                printf 'Unknown download option: %s\n' "$4" >&2
+                exit 2
+            }
+            download_kind=speculative
+        fi
+        select_model "$2"
+        download_model "$(resolve_variant "$3")" "$download_kind"
         ;;
-    serve)
-        [ "$#" -ge 3 ] && [ "$#" -le 4 ] || { usage >&2; exit 2; }
-        resolve_model "$2" >/dev/null
-        backend=$(resolve_backend "$3")
-        variant=$(resolve_variant "${4:-}")
-        case "$backend" in ds4) serve_ds4 "$variant" ;; esac
+    serve|benchmark)
+        parse_run_args "${@:2}"
+        select_model "$2"
+        resolve_backend "$3" >/dev/null
+        case "${RUN_SPECULATIVE:-}" in
+            ""|on|off) ;;
+            compare)
+                [ "$command" = benchmark ] || {
+                    printf 'Speculative compare is benchmark-only.\n' >&2
+                    exit 2
+                }
+                ;;
+            *)
+                printf 'Invalid speculative mode: %s\n' \
+                    "$RUN_SPECULATIVE" >&2
+                exit 2
+                ;;
+        esac
+        run_backend "$command" "$(resolve_variant "$RUN_VARIANT")" \
+            "$RUN_SPECULATIVE"
         ;;
-    benchmark)
-        [ "$#" -ge 3 ] && [ "$#" -le 4 ] || { usage >&2; exit 2; }
-        resolve_model "$2" >/dev/null
-        backend=$(resolve_backend "$3")
-        variant=$(resolve_variant "${4:-}")
-        case "$backend" in ds4) benchmark_ds4 "$variant" ;; esac
+    *)
+        printf 'Unknown command: %s\n\n' "$command" >&2
+        usage >&2
+        exit 2
         ;;
-    *) printf 'Unknown command: %s\n\n' "$command" >&2; usage >&2; exit 2 ;;
 esac
