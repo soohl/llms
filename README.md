@@ -38,6 +38,7 @@ dynamically and contains no backend-specific variable list.
 | Model | Variant | Backend | Hardware | Docs |
 | --- | --- | --- | --- | --- |
 | DeepSeek V4 Flash 0731 | `q4`, `mxfp4` | `ds4` | Apple M3 Ultra, 256 GiB | [Guide](models/DeepSeek-V4-Flash-0731/README.md) · [Results](models/DeepSeek-V4-Flash-0731/BENCHMARK.md) |
+| Gemma 4 31B | `q4-0` | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Gemma-4-31B/README.md) · [Results](models/Gemma-4-31B/BENCHMARK.md) |
 | Muse Glimmer 30B | `kquant-17gb` + DFlash | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Muse-Glimmer-30B/README.md) · [Results](models/Muse-Glimmer-30B/BENCHMARK.md) |
 | Qwen3.6 27B | `q4-k-m` | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.6-27B/README.md) · [Results](models/Qwen3.6-27B/BENCHMARK.md) |
 
@@ -74,7 +75,8 @@ caches stay in ignored local directories.
 
 ## Benchmark
 
-The common benchmark is a greedy single-stream sweep over
-`benchmark/prompts/promessi-sposi.txt`: 128–8,192 prompt tokens, doubling each
+The common llama.cpp benchmark is a greedy single-stream sweep over
+`benchmark/prompts/promessi-sposi.txt`: 128–16,384 prompt tokens, doubling each
 step, with 128 generated tokens. Each server profile receives one short warm-up
-request. Commands print results and create no artifact.
+request. DeepSeek retains its backend-specific 8,192-token sweep. Commands
+print results and create no artifact.

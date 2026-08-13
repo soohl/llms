@@ -4,18 +4,20 @@
 - Hardware: NVIDIA RTX 4090, 24 GB VRAM
 - Runtime: CUDA 12.8, full offload, Flash Attention, F16 KV
 - Batch/micro-batch: 2,048/2,048
+- Target benchmark run date: 2026-08-12
 
 ## Common benchmark
 
 | Context | Prefill | Generated | Decode |
 | ---: | ---: | ---: | ---: |
-| 128 | 1,686.10 t/s | 128 | 49.34 t/s |
-| 256 | 2,426.10 t/s | 128 | 49.35 t/s |
-| 512 | 2,399.51 t/s | 128 | 48.86 t/s |
-| 1,024 | 2,481.54 t/s | 128 | 48.77 t/s |
-| 2,048 | 2,658.72 t/s | 128 | 48.05 t/s |
-| 4,096 | 2,731.04 t/s | 128 | 47.28 t/s |
-| 8,192 | 2,733.81 t/s | 128 | 47.56 t/s |
+| 128 | 1,626.82 t/s | 128 | 49.37 t/s |
+| 256 | 2,084.45 t/s | 128 | 48.95 t/s |
+| 512 | 2,418.88 t/s | 128 | 48.80 t/s |
+| 1,024 | 2,499.50 t/s | 128 | 48.49 t/s |
+| 2,048 | 2,724.03 t/s | 128 | 48.34 t/s |
+| 4,096 | 2,748.47 t/s | 128 | 47.59 t/s |
+| 8,192 | 2,757.15 t/s | 128 | 47.75 t/s |
+| 16,384 | 2,704.06 t/s | 128 | 47.08 t/s |
 
 ## Speculative compare
 
@@ -42,5 +44,6 @@ high. It does not improve prefill and may regress on low-acceptance text.
 | DFlash max 4 | Faster than tested 8, 12, and 15 |
 
 ```sh
+./llm benchmark muse-glimmer-30b llamacpp kquant-17gb --speculative off
 ./llm benchmark muse-glimmer-30b llamacpp kquant-17gb --speculative compare
 ```

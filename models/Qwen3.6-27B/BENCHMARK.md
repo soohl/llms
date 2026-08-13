@@ -5,18 +5,20 @@
 - Runtime: CUDA 12.8, target full offload, Flash Attention, F16 KV
 - Variant: Q4_K_M
 - Target batch/micro-batch: 2,048/2,048
+- Target benchmark run date: 2026-08-12
 
 ## Common benchmark
 
 | Context | Prefill | Generated | Decode |
 | ---: | ---: | ---: | ---: |
-| 128 | 1,239.33 t/s | 128 | 39.40 t/s |
-| 256 | 1,856.93 t/s | 128 | 39.96 t/s |
-| 512 | 1,935.59 t/s | 128 | 40.99 t/s |
-| 1,024 | 2,172.38 t/s | 128 | 42.20 t/s |
-| 2,048 | 2,319.50 t/s | 128 | 42.08 t/s |
-| 4,096 | 2,372.31 t/s | 128 | 40.36 t/s |
-| 8,192 | 2,341.61 t/s | 128 | 41.15 t/s |
+| 128 | 1,252.67 t/s | 128 | 42.69 t/s |
+| 256 | 1,732.25 t/s | 128 | 42.49 t/s |
+| 512 | 2,180.79 t/s | 128 | 42.45 t/s |
+| 1,024 | 2,193.88 t/s | 128 | 42.37 t/s |
+| 2,048 | 2,392.88 t/s | 128 | 42.21 t/s |
+| 4,096 | 2,401.69 t/s | 128 | 41.82 t/s |
+| 8,192 | 2,385.78 t/s | 128 | 41.37 t/s |
+| 16,384 | 2,320.10 t/s | 128 | 40.52 t/s |
 
 The 8,192-token server profile used 19,150 MiB VRAM, leaving about 4.8 GiB
 free on the 24 GB card.

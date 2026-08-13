@@ -132,7 +132,7 @@ case "${1:-}" in
             --model "$model" \
             --prompt "$ROOT/benchmark/prompts/promessi-sposi.txt" \
             --ctx-start "${LLM_BENCH_CTX_START:-128}" \
-            --ctx-max "${LLM_BENCH_CTX_MAX:-8192}" \
+            --ctx-max "${LLM_BENCH_CTX_MAX:-16384}" \
             --step "${LLM_BENCH_STEP_MUL:-2}" \
             --generated "$generated" \
             --batch "$batch" \
