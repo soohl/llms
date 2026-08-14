@@ -7,6 +7,10 @@
 - Tuned batch/micro-batch: 1,024/512
 - Run date: 2026-08-12
 
+These recorded speed results use F16 KV. The current model default is Q8_0 so
+that the 65,536-token agentic profile fits fully on an RTX 4090. Set
+`LLM_CACHE_TYPE=f16` to reproduce this speed profile.
+
 ## Common benchmark
 
 | Context | Prefill | Generated | Decode |

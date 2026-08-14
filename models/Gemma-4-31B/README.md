@@ -2,7 +2,7 @@
 
 Google's dense 30.7B instruction-tuned reasoning model, configured for a
 single NVIDIA GPU with 24 GB VRAM. The text model uses the llama.cpp Q4_0
-GGUF (18.0 GB), a 16,384-token context, and an F16 KV cache. This profile is
+GGUF (18.0 GB), a 16,384-token context, and a Q8_0 KV cache. This profile is
 text-only; the separate vision projector is not downloaded.
 
 ## Sources
@@ -34,14 +34,13 @@ The server exposes an OpenAI-compatible API at
 The `llamacpp-gemma` compatibility profile enables the embedded Jinja template
 and Gemma's per-request thinking mode.
 
-Defaults: 16,384 context, full CUDA offload, Flash Attention, F16 KV,
+Defaults: 16,384 context, full CUDA offload, Flash Attention, Q8_0 KV,
 1,024/512 batch/micro-batch, and Google's recommended sampling values. These
-defaults were verified on an RTX 4090: at 16,000 prompt tokens plus 128
-generated tokens, the server process peaked at 20,282 MiB and decoded at
-39.67 t/s, leaving 4,282 MiB relative to the card's 24,564 MiB capacity.
-llama.cpp's enabled fit logic also keeps a 1 GiB device-memory margin if
-requested settings need adjustment. Common overrides include `LLM_CTX`,
-`LLM_BATCH`, `LLM_UBATCH`, and `LLM_CACHE_TYPE`.
+defaults support the standard 65,536-token agentic profile on an RTX 4090:
+the server used 21,610 MiB and generated successfully with all layers on the
+GPU. The recorded speed results used F16 KV; see
+[BENCHMARK.md](BENCHMARK.md) for that profile. Common overrides include
+`LLM_CTX`, `LLM_BATCH`, `LLM_UBATCH`, and `LLM_CACHE_TYPE`.
 
 Gemma 4 supports up to 256K context, but that is not the 24 GB profile. The
 vision projector would consume additional memory and is deliberately omitted.
