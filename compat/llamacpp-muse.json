@@ -1,0 +1,14 @@
+{
+  "extends": "llamacpp-openai",
+  "server": {
+    "reasoningStrength": "high"
+  },
+  "benchmark": {
+    "reasoning": {
+      "mode": "native-strong",
+      "piThinking": "high",
+      "control": "strength",
+      "nativeValue": "high"
+    }
+  }
+}

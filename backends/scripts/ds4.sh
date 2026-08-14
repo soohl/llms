@@ -82,11 +82,11 @@ case "${1:-}" in
                     "$MODEL_ID" "$variant" >&2
                 exit 1
             }
-            exec python3 "$ROOT/benchmark/scripts/ds4.py" \
+            exec python3 "$ROOT/benchmarks/scripts/ds4.py" \
                 --binary "$BACKEND_ROOT/ds4" \
                 --model "$model" \
                 --support "$support" \
-                --prompts "$ROOT/benchmark/prompts/speculative.json" \
+                --prompts "$ROOT/benchmarks/speed/speculative.json" \
                 --generated "${LLM_BENCH_GEN_TOKENS:-512}" \
                 --context \
                 "${LLM_BENCH_SPECULATIVE_CTX:-${DS4_BENCH_SPECULATIVE_CONTEXT:-32768}}" \
@@ -102,16 +102,12 @@ case "${1:-}" in
         step_mul=${LLM_BENCH_STEP_MUL:-${DS4_BENCH_STEP_MUL:-2}}
         step_incr=${LLM_BENCH_STEP_INCR:-}
         prefill=${LLM_PREFILL_CHUNK:-${DS4_PREFILL_CHUNK:-8192}}
-        csv=${LLM_BENCH_CSV:-}
-        if [ -n "$csv" ] && [ "${csv#/}" = "$csv" ]; then
-            csv="$(pwd)/$csv"
-        fi
 
         unset DS4_METAL_Q8_MV_NSG DS4_METAL_Q8_MV_ROWS
         export DS4_METAL_MODEL_UNTRACKED=${DS4_METAL_MODEL_UNTRACKED:-1}
         args=(
             --model "$model" --metal
-            --prompt-file "$ROOT/benchmark/prompts/promessi-sposi.txt"
+            --prompt-file "$ROOT/benchmarks/speed/promessi-sposi.txt"
             --ctx-start "$ctx_start" --ctx-max "$ctx_max"
             --ctx-alloc "$ctx_alloc"
             --prefill-chunk "$prefill" --gen-tokens "$generated"
@@ -121,7 +117,6 @@ case "${1:-}" in
         else
             args+=(--step-mul "$step_mul")
         fi
-        [ -z "$csv" ] || args+=(--csv "$csv")
         cd "$BACKEND_ROOT"
         exec ./ds4-bench "${args[@]}"
         ;;

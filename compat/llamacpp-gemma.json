@@ -1,0 +1,22 @@
+{
+  "extends": "llamacpp-openai",
+  "pi": {
+    "compat": {
+      "thinkingFormat": "chat-template",
+      "chatTemplateKwargs": {
+        "enable_thinking": {
+          "$var": "thinking.enabled"
+        },
+        "preserve_thinking": true
+      }
+    }
+  },
+  "benchmark": {
+    "reasoning": {
+      "mode": "native-strong",
+      "piThinking": "high",
+      "control": "toggle",
+      "nativeValue": "enabled"
+    }
+  }
+}

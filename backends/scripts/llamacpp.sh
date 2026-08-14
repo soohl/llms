@@ -72,7 +72,7 @@ case "${1:-}" in
             --threads "$threads" --threads-batch "$threads"
             --cache-type-k "$cache" --cache-type-v "$cache"
             --flash-attn on --parallel 1 --host "$host" --port "$port"
-            --alias "$MODEL_ID"
+            --alias "${API_MODEL_ID:-$MODEL_ID}"
         )
         [ "${LLAMACPP_JINJA:-0}" != 1 ] || args+=(--jinja)
         [ -z "${LLAMACPP_TEMPERATURE:-}" ] ||
@@ -127,10 +127,10 @@ case "${1:-}" in
             speculative_ubatch=$ubatch
         fi
         args=(
-            "$ROOT/benchmark/scripts/llamacpp.py"
+            "$ROOT/benchmarks/scripts/llamacpp.py"
             --server "$server" \
             --model "$model" \
-            --prompt "$ROOT/benchmark/prompts/promessi-sposi.txt" \
+            --prompt "$ROOT/benchmarks/speed/promessi-sposi.txt" \
             --ctx-start "${LLM_BENCH_CTX_START:-128}" \
             --ctx-max "${LLM_BENCH_CTX_MAX:-16384}" \
             --step "${LLM_BENCH_STEP_MUL:-2}" \
@@ -155,7 +155,7 @@ case "${1:-}" in
             args+=(--speculative-context \
                 "${LLAMACPP_CONTEXT:-32768}")
             args+=(--speculative-prompts \
-                "$ROOT/benchmark/prompts/speculative.json")
+                "$ROOT/benchmarks/speed/speculative.json")
         fi
         exec python3 "${args[@]}"
         ;;

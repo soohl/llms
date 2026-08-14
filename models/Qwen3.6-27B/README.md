@@ -11,6 +11,8 @@ cache. This profile is text-only.
 - [DFlash drafter GGUF](https://huggingface.co/Alittlehammmer/Qwen3.6-27B-DFlash-GGUF-llama.cpp)
 - [llama.cpp](https://github.com/ggml-org/llama.cpp)
 
+Model and drafter artifacts are Apache 2.0 and ungated; llama.cpp is MIT.
+
 ## File
 
 | Variant | Size | SHA-256 |
@@ -21,15 +23,19 @@ cache. This profile is text-only.
 ## Run
 
 ```sh
-./llm setup qwen3.6-27b llamacpp
+./llm setup qwen3.6-27b
 ./llm download qwen3.6-27b q4-k-m
 ./llm download qwen3.6-27b q4-k-m --speculative
-./llm serve qwen3.6-27b llamacpp q4-k-m
-./llm benchmark qwen3.6-27b llamacpp q4-k-m
+./llm serve qwen3.6-27b q4-k-m
+./llm benchmark speed qwen3.6-27b q4-k-m
+./llm benchmark agentic qwen3.6-27b q4-k-m
 ```
 
 Defaults: 8,192 context, full target CUDA offload, Flash Attention, F16 KV, and
 the official thinking-mode sampling values. The tested server used 19,150 MiB
-VRAM, while DFlash used 20,702 MiB. DFlash is enabled by default, averages
+VRAM, while DFlash used 20,702 MiB. DFlash is enabled by default, macro-averages
 1.60x in the prompt suite, and can be disabled with `--speculative off`. See
 [BENCHMARK.md](BENCHMARK.md).
+
+The `llamacpp-qwen` compatibility profile enables the embedded Jinja template
+and tells Pi to use Qwen's per-request chat-template thinking controls.

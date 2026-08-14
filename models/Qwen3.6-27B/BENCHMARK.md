@@ -33,7 +33,7 @@ Q8_0 DFlash drafter with four draft tokens, 1,024/256 batch/micro-batch, and
 | Technical | 19 | 512 | 42.18 t/s | 60.51 t/s | 1.43x | 52.5% |
 | Coding | 26 | 512 | 42.23 t/s | 75.80 t/s | 1.80x | 71.9% |
 | Analysis | 28 | 512 | 42.22 t/s | 66.54 t/s | 1.58x | 60.4% |
-| **Average** | — | — | **42.21 t/s** | **67.62 t/s** | **1.60x** | **60.9%** |
+| **Macro average** | — | — | **42.21 t/s** | **67.62 t/s** | **1.60x** | **60.9%** |
 
 DFlash used 20,702 MiB VRAM. Four draft tokens were selected as the balanced
 setting: 8 and 16 reached slightly higher average throughput in this small
@@ -50,6 +50,6 @@ suite, but had substantially lower acceptance and less consistent gains.
 | DFlash max 4 | Kept for 60.9% acceptance and consistent speedup |
 
 ```sh
-./llm benchmark qwen3.6-27b llamacpp q4-k-m --speculative off
-./llm benchmark qwen3.6-27b llamacpp q4-k-m --speculative compare
+./llm benchmark speed qwen3.6-27b q4-k-m --speculative off
+./llm benchmark speed qwen3.6-27b q4-k-m --speculative compare
 ```

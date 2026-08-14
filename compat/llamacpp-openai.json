@@ -1,0 +1,14 @@
+{
+  "backend": "llamacpp",
+  "pi": {
+    "compat": {
+      "supportsDeveloperRole": false,
+      "supportsReasoningEffort": false,
+      "supportsUsageInStreaming": true,
+      "maxTokensField": "max_tokens"
+    }
+  },
+  "server": {
+    "jinja": true
+  }
+}

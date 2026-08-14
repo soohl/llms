@@ -10,28 +10,32 @@ the perception encoder is not included.
 - [Official GGUF files](https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF)
 - [llama.cpp](https://github.com/ggml-org/llama.cpp)
 
-Artifacts are Apache 2.0; llama.cpp is MIT.
+Artifacts are Apache 2.0 and ungated, with Meta's usage policy included in the
+model repository; llama.cpp is MIT.
 
 ## Files
 
 | File | Size | SHA-256 |
 | --- | ---: | --- |
-| `muse-glimmer-30B-kquant-17gb.gguf` | 16,756,681,056 | `7e9b74b7c8875e9e265695df9613bf6290f2392e479ce740495a129019c488d8` |
-| `dflash-kquant.gguf` | 1,631,205,312 | `27d9a805fa29b943cfb6ad4843367cd4eaaaf06bd452d8cc3e00a2cd18a677bc` |
+| `Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf` | 16,756,683,904 | `4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e` |
+| `dflash-Muse-Glimmer-30B-Q4_K_M.gguf` | 1,631,208,128 | `b2e808bf656086fe86bd0d0bd990f01d33e377537a07c02d45371517c8b264ef` |
 
 ## Run
 
 ```sh
-./llm setup muse-glimmer-30b llamacpp
+./llm setup muse-glimmer-30b
 ./llm download muse-glimmer-30b kquant-17gb
 ./llm download muse-glimmer-30b kquant-17gb --speculative
-./llm serve muse-glimmer-30b llamacpp
-./llm benchmark muse-glimmer-30b llamacpp
+./llm serve muse-glimmer-30b
+./llm benchmark speed muse-glimmer-30b
+./llm benchmark agentic muse-glimmer-30b
 ```
 
 Setup uses llama.cpp b10356, CUDA 12.8, and an NVIDIA RTX 4090. The server
 provides an OpenAI-compatible API at `http://127.0.0.1:8080/v1` with model
 name `muse-glimmer-30b`.
+The `llamacpp-muse` compatibility profile enables the embedded Jinja template
+and sets Muse's server-side reasoning strength.
 
 Tuned defaults: 32,768 context, 2,048 batch/micro-batch, F16 KV, Flash
 Attention, DFlash max 4, and high reasoning. Use `--speculative off` for
@@ -41,7 +45,7 @@ Common overrides: `LLM_CTX`, `LLM_BATCH`, `LLM_UBATCH`, `LLM_CACHE_TYPE`,
 `LLM_HOST`, `LLM_PORT`, `LLM_REASONING_STRENGTH`, and `LLM_SPECULATIVE`.
 
 ```sh
-./llm benchmark muse-glimmer-30b llamacpp kquant-17gb --speculative compare
+./llm benchmark speed muse-glimmer-30b kquant-17gb --speculative compare
 ```
 
 The comparison uses a fixed three-prompt generation suite with 512 output

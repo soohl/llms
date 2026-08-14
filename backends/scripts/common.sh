@@ -71,7 +71,7 @@ model_path() {
 }
 
 missing_backend() {
-    printf '%s is not built. Run: ./llm setup %s %s\n' \
-        "$BACKEND" "$MODEL_ID" "$BACKEND" >&2
+    printf '%s is not built. Run: ./llm setup %s\n' \
+        "$BACKEND" "$MODEL_ID" >&2
     exit 1
 }

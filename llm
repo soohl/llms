@@ -42,15 +42,18 @@ load_model_config() {
     MODEL_DIR=$1
     clear_model_config
     source_config "$MODEL_DIR/model.conf"
-    backend_config="$ROOT/backends/config/${BACKEND:-}.conf"
+    configured_backend=${BACKEND:-}
+    backend_config="$ROOT/backends/config/$configured_backend.conf"
     [ -f "$backend_config" ] || {
         printf 'Backend config is missing: %s\n' "$backend_config" >&2
         exit 1
     }
+    clear_model_config
     source_config "$backend_config"
+    source_config "$MODEL_DIR/model.conf"
 
-    for required in MODEL_ID MODEL_NAME BACKEND TARGET_HF_REPO VARIANTS \
-        DEFAULT_VARIANT; do
+    for required in MODEL_ID MODEL_NAME BACKEND COMPAT_PROFILE TARGET_HF_REPO \
+        VARIANTS DEFAULT_VARIANT; do
         [ -n "${!required:-}" ] || {
             printf 'Missing %s in %s/model.conf\n' "$required" "$MODEL_DIR" >&2
             exit 1
@@ -67,6 +70,17 @@ load_model_config() {
     BACKEND_ADAPTER="$ROOT/backends/scripts/$BACKEND.sh"
 }
 
+load_compat_profile() {
+    profile_values=$(
+        python3 "$ROOT/compat/resolve.py" "$COMPAT_PROFILE" \
+            --backend "$BACKEND" --format shell
+    )
+    eval "$profile_values"
+    CONFIG_VARIABLES="$CONFIG_VARIABLES PI_COMPAT_JSON \
+PI_THINKING_LEVEL_MAP_JSON BENCHMARK_REASONING_JSON LLAMACPP_JINJA \
+LLAMACPP_REASONING_STRENGTH"
+}
+
 resolve_model_dir() {
     requested=$1
     while IFS= read -r config; do
@@ -78,14 +92,6 @@ resolve_model_dir() {
         fi
     done < <(model_configs)
     printf 'Unknown model: %s\n' "$requested" >&2
-    exit 2
-}
-
-resolve_backend() {
-    requested=$1
-    [ "$requested" = "$BACKEND" ] && return
-    printf 'Backend %s is not configured for %s (use %s).\n' \
-        "$requested" "$MODEL_NAME" "$BACKEND" >&2
     exit 2
 }
 
@@ -127,15 +133,62 @@ Local LLM runner
 
 Usage:
   ./llm list
-  ./llm setup <model> <backend>
+  ./llm setup <model>
   ./llm download <model> <variant> [--speculative]
-  ./llm serve <model> <backend> [variant] [--speculative on|off]
-  ./llm benchmark <model> <backend> [variant] [--speculative off|on|compare]
+  ./llm serve <model> [variant] [--speculative on|off]
+  ./llm benchmark speed <model> [variant] [options]
+  ./llm benchmark agentic <model> [variant] [options]
+  ./llm benchmark agentic report
+  ./llm benchmark agentic self-test
 
 Models are discovered from models/*/model.conf.
 HELP
     printf '\nAvailable now:\n'
     list_models
+}
+
+agentic_usage() {
+    cat <<'HELP'
+Usage:
+  ./llm benchmark agentic <model> [variant] [options]
+
+Reasoning: native-strong (fixed; resolved by compatibility profile)
+
+Options:
+  --task ID                 Run one task (repeatable; default: all)
+  --context-window TOKENS   Default: 65536
+  --max-output TOKENS       Default: 4096
+  --reserve-tokens TOKENS   Default: 2048
+  --keep-recent-tokens N    Default: 1024
+  --retries N               Default: 2
+  --transport MODE          sse|websocket|auto
+  --cache-retention MODE    short|long
+  --timeout SECONDS         Per task; default: 7200
+HELP
+}
+
+agentic_context_from_args() {
+    result=65536
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --context-window)
+                [ "$#" -ge 2 ] || {
+                    printf 'Missing value for --context-window.\n' >&2
+                    return 2
+                }
+                result=$2
+                shift 2
+                ;;
+            --context-window=*)
+                result=${1#*=}
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+    printf '%s\n' "$result"
 }
 
 require_command() {
@@ -161,8 +214,10 @@ download_config() {
             prefix="DOWNLOAD_${key}_SPECULATIVE"
             variant_file_name="${prefix}_FILE"
             variant_size_name="${prefix}_SIZE"
+            variant_sha_name="${prefix}_SHA256"
             if [ -z "${!variant_file_name:-}" ] &&
-               [ -z "${!variant_size_name:-}" ]; then
+               [ -z "${!variant_size_name:-}" ] &&
+               [ -z "${!variant_sha_name:-}" ]; then
                 prefix=DOWNLOAD_SPECULATIVE
             fi
             ;;
@@ -174,12 +229,14 @@ download_config() {
 
     file_name="${prefix}_FILE"
     size_name="${prefix}_SIZE"
+    sha_name="${prefix}_SHA256"
     file=${!file_name:-}
     expected_size=${!size_name:-}
-    if [ -z "$file" ] && [ -z "$expected_size" ]; then
+    expected_sha=${!sha_name:-}
+    if [ -z "$file" ] && [ -z "$expected_size" ] && [ -z "$expected_sha" ]; then
         return 1
     fi
-    if [ -z "$file" ] || [ -z "$expected_size" ]; then
+    if [ -z "$file" ] || [ -z "$expected_size" ] || [ -z "$expected_sha" ]; then
         printf 'Incomplete %s download config for variant %s in %s/model.conf\n' \
             "$kind" "$variant" "$MODEL_DIR" >&2
         exit 1
@@ -191,7 +248,46 @@ download_config() {
             exit 1
             ;;
     esac
-    printf '%s|%s\n' "$file" "$expected_size"
+    case "$expected_sha" in
+        *[!0-9a-fA-F]*|'')
+            printf 'Invalid %s in %s/model.conf: %s\n' \
+                "$sha_name" "$MODEL_DIR" "$expected_sha" >&2
+            exit 1
+            ;;
+    esac
+    [ "${#expected_sha}" -eq 64 ] || {
+        printf 'Invalid %s in %s/model.conf: expected 64 hex characters\n' \
+            "$sha_name" "$MODEL_DIR" >&2
+        exit 1
+    }
+    printf '%s|%s|%s\n' "$file" "$expected_size" \
+        "$(printf '%s' "$expected_sha" | tr '[:upper:]' '[:lower:]')"
+}
+
+verify_model_file() {
+    path=$1
+    expected_size=$2
+    expected_sha=$3
+    actual_size=$(wc -c <"$path" | tr -d '[:space:]')
+    [ "$actual_size" = "$expected_size" ] || {
+        printf 'Model file has the wrong size: %s\n' "$path" >&2
+        printf 'Expected %s bytes, found %s.\n' \
+            "$expected_size" "$actual_size" >&2
+        exit 1
+    }
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual_sha=$(sha256sum "$path" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        actual_sha=$(shasum -a 256 "$path" | awk '{print $1}')
+    else
+        printf 'Required command not found: sha256sum or shasum\n' >&2
+        exit 1
+    fi
+    [ "$actual_sha" = "$expected_sha" ] || {
+        printf 'Model file has the wrong SHA-256: %s\n' "$path" >&2
+        printf 'Expected %s, found %s.\n' "$expected_sha" "$actual_sha" >&2
+        exit 1
+    }
 }
 
 download_model() {
@@ -203,17 +299,11 @@ download_model() {
             "$wanted_kind" "$wanted" >&2
         exit 1
     }
-    IFS='|' read -r file expected_size <<<"$config"
+    IFS='|' read -r file expected_size expected_sha <<<"$config"
     path="$GGUF_ROOT/$file"
     if [ -e "$path" ]; then
-        actual_size=$(wc -c <"$path" | tr -d '[:space:]')
-        [ "$actual_size" = "$expected_size" ] || {
-            printf 'Model file has the wrong size: %s\n' "$path" >&2
-            printf 'Expected %s bytes, found %s.\n' \
-                "$expected_size" "$actual_size" >&2
-            exit 1
-        }
-        printf 'Already downloaded and size verified: %s\n' "$path"
+        verify_model_file "$path" "$expected_size" "$expected_sha"
+        printf 'Already downloaded; size and SHA-256 verified: %s\n' "$path"
         return
     fi
 
@@ -225,11 +315,17 @@ download_model() {
        [ -n "${SPECULATIVE_HF_REPO:-}" ]; then
         repo=$SPECULATIVE_HF_REPO
     fi
+    revision=${TARGET_HF_REVISION:-}
+    if [ "$wanted_kind" = speculative ] &&
+       [ -n "${SPECULATIVE_HF_REVISION:-}" ]; then
+        revision=$SPECULATIVE_HF_REVISION
+    fi
     args=(
         download "$repo" "$file"
         --repo-type model
         --local-dir "$GGUF_ROOT"
     )
+    [ -z "$revision" ] || args+=(--revision "$revision")
     [ -z "${HF_TOKEN:-}" ] || args+=(--token "$HF_TOKEN")
     printf 'Downloading %s file: %s/%s\n' "$wanted_kind" "$repo" "$file"
     HF_HOME="$cache_dir" hf "${args[@]}"
@@ -238,12 +334,8 @@ download_model() {
             "$path" >&2
         exit 1
     }
-    actual_size=$(wc -c <"$path" | tr -d '[:space:]')
-    [ "$actual_size" = "$expected_size" ] || {
-        printf 'Downloaded model has the wrong size: %s\n' "$path" >&2
-        exit 1
-    }
-    printf 'Downloaded and size verified: %s\n' "$path"
+    verify_model_file "$path" "$expected_size" "$expected_sha"
+    printf 'Downloaded; size and SHA-256 verified: %s\n' "$path"
     rm -rf "$GGUF_ROOT/.cache/huggingface"
     rmdir "$GGUF_ROOT/.cache" 2>/dev/null || true
 }
@@ -261,33 +353,33 @@ run_backend() {
 }
 
 parse_run_args() {
-    [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+    [ "$#" -ge 1 ] || { usage >&2; exit 2; }
     RUN_VARIANT=
     RUN_SPECULATIVE=
-    while [ "$#" -gt 2 ]; do
-        case "$3" in
+    while [ "$#" -gt 1 ]; do
+        case "$2" in
             --speculative)
-                [ "$#" -ge 4 ] || {
+                [ "$#" -ge 3 ] || {
                     printf 'Missing value for --speculative.\n' >&2
                     exit 2
                 }
-                RUN_SPECULATIVE=$4
+                RUN_SPECULATIVE=$3
                 shift 2
                 ;;
             --speculative=*)
-                RUN_SPECULATIVE=${3#*=}
+                RUN_SPECULATIVE=${2#*=}
                 shift
                 ;;
             --*)
-                printf 'Unknown option: %s\n' "$3" >&2
+                printf 'Unknown option: %s\n' "$2" >&2
                 exit 2
                 ;;
             *)
                 [ -z "$RUN_VARIANT" ] || {
-                    printf 'Unexpected argument: %s\n' "$3" >&2
+                    printf 'Unexpected argument: %s\n' "$2" >&2
                     exit 2
                 }
-                RUN_VARIANT=$3
+                RUN_VARIANT=$2
                 shift
                 ;;
         esac
@@ -308,9 +400,8 @@ case "$command" in
         list_models
         ;;
     setup)
-        [ "$#" -eq 3 ] || { usage >&2; exit 2; }
+        [ "$#" -eq 2 ] || { usage >&2; exit 2; }
         select_model "$2"
-        resolve_backend "$3" >/dev/null
         run_backend setup
         ;;
     download)
@@ -328,19 +419,18 @@ case "$command" in
             download_kind=speculative
         fi
         select_model "$2"
-        download_model "$(resolve_variant "$3")" "$download_kind"
+        run_variant=$(resolve_variant "$3")
+        download_model "$run_variant" "$download_kind"
         ;;
-    serve|benchmark)
+    serve)
         parse_run_args "${@:2}"
         select_model "$2"
-        resolve_backend "$3" >/dev/null
+        load_compat_profile
         case "${RUN_SPECULATIVE:-}" in
             ""|on|off) ;;
             compare)
-                [ "$command" = benchmark ] || {
-                    printf 'Speculative compare is benchmark-only.\n' >&2
-                    exit 2
-                }
+                printf 'Speculative compare is benchmark-only.\n' >&2
+                exit 2
                 ;;
             *)
                 printf 'Invalid speculative mode: %s\n' \
@@ -348,8 +438,166 @@ case "$command" in
                 exit 2
                 ;;
         esac
-        run_backend "$command" "$(resolve_variant "$RUN_VARIANT")" \
-            "$RUN_SPECULATIVE"
+        run_variant=$(resolve_variant "$RUN_VARIANT")
+        run_backend serve "$run_variant" "$RUN_SPECULATIVE"
+        ;;
+    benchmark)
+        benchmark_type=${2:-}
+        case "$benchmark_type" in
+            agentic)
+                require_command python3
+                case "${3:-}" in
+                    report|self-test)
+                        [ "$#" -eq 3 ] || {
+                            printf 'Unexpected agentic benchmark argument: %s\n' \
+                                "$4" >&2
+                            exit 2
+                        }
+                        exec python3 "$ROOT/benchmarks/agentic/run.py" "$3"
+                        ;;
+                    -h|--help)
+                        agentic_usage
+                        exit
+                        ;;
+                esac
+                [ "$#" -ge 3 ] || { usage >&2; exit 2; }
+                select_model "$3"
+                load_compat_profile
+                [ "$BENCHMARK_REASONING_JSON" != "{}" ] || {
+                    printf 'Compatibility profile %s has no benchmark reasoning mode.\n' \
+                        "$COMPAT_PROFILE" >&2
+                    exit 1
+                }
+                agentic_args=("${@:4}")
+                agentic_variant=
+                if [ "${#agentic_args[@]}" -gt 0 ] &&
+                   [[ "${agentic_args[0]}" != --* ]]; then
+                    agentic_variant=${agentic_args[0]}
+                    agentic_args=("${agentic_args[@]:1}")
+                fi
+                agentic_variant=$(resolve_variant "$agentic_variant")
+                API_MODEL_ID=${API_MODEL_ID:-$MODEL_ID}
+                agentic_context=65536
+                if [ "${#agentic_args[@]}" -gt 0 ]; then
+                    agentic_context=$(
+                        agentic_context_from_args "${agentic_args[@]}"
+                    )
+                fi
+                case "$agentic_context" in
+                    *[!0-9]*|'0'|'')
+                        printf 'Invalid --context-window: %s\n' \
+                            "$agentic_context" >&2
+                        exit 2
+                        ;;
+                esac
+                agentic_port=$(python3 - <<'PY'
+import socket
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)
+                agentic_url="http://127.0.0.1:$agentic_port/v1"
+                agentic_log=$(
+                    mktemp "${TMPDIR:-/tmp}/llm-agentic-server.XXXXXX"
+                )
+                export ROOT MODEL_DIR GGUF_ROOT RUNTIME_ROOT BACKEND_ROOT
+                LLM_CTX="$agentic_context" \
+                    LLM_HOST=127.0.0.1 LLM_PORT="$agentic_port" \
+                    "$BACKEND_ADAPTER" serve "$agentic_variant" off \
+                    >"$agentic_log" 2>&1 &
+                agentic_server_pid=$!
+                cleanup_agentic_server() {
+                    kill "$agentic_server_pid" 2>/dev/null || true
+                    wait "$agentic_server_pid" 2>/dev/null || true
+                    rm -f "$agentic_log"
+                }
+                trap cleanup_agentic_server EXIT INT TERM
+                if ! python3 - "$agentic_server_pid" "$agentic_url" \
+                    "$API_MODEL_ID" <<'PY'
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+
+pid = int(sys.argv[1])
+url = sys.argv[2].rstrip("/") + "/models"
+model = sys.argv[3]
+deadline = time.monotonic() + 600
+while time.monotonic() < deadline:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        raise SystemExit("local model server exited during startup")
+    try:
+        with urllib.request.urlopen(url, timeout=5) as response:
+            payload = json.load(response)
+        if model in {
+            item.get("id")
+            for item in payload.get("data", [])
+            if isinstance(item, dict)
+        }:
+            raise SystemExit(0)
+    except (OSError, ValueError, urllib.error.URLError):
+        pass
+    time.sleep(0.5)
+raise SystemExit("timed out waiting for the local model server")
+PY
+                then
+                    printf 'Agentic model server failed. Log: %s\n' \
+                        "$agentic_log" >&2
+                    tail -40 "$agentic_log" >&2 || true
+                    exit 1
+                fi
+                runner_args=(
+                    run "benchmark-local-$BACKEND/$API_MODEL_ID"
+                    --benchmark-model "$MODEL_ID"
+                    --backend "$BACKEND"
+                    --variant "$agentic_variant"
+                    --base-url "$agentic_url"
+                    --compat-profile "$COMPAT_PROFILE"
+                    --reasoning-profile-json "$BENCHMARK_REASONING_JSON"
+                )
+                [ "${MODEL_REASONING:-0}" != 1 ] ||
+                    runner_args+=(--reasoning)
+                [ "$PI_COMPAT_JSON" = "{}" ] ||
+                    runner_args+=(--compat-json "$PI_COMPAT_JSON")
+                [ "$PI_THINKING_LEVEL_MAP_JSON" = "{}" ] ||
+                    runner_args+=(
+                        --thinking-level-map-json
+                        "$PI_THINKING_LEVEL_MAP_JSON"
+                    )
+                if [ "${#agentic_args[@]}" -gt 0 ]; then
+                    python3 "$ROOT/benchmarks/agentic/run.py" \
+                        "${runner_args[@]}" "${agentic_args[@]}"
+                else
+                    python3 "$ROOT/benchmarks/agentic/run.py" \
+                        "${runner_args[@]}"
+                fi
+                ;;
+            speed)
+                parse_run_args "${@:3}"
+                select_model "$3"
+                case "${RUN_SPECULATIVE:-}" in
+                    ""|on|off|compare) ;;
+                    *)
+                        printf 'Invalid speculative mode: %s\n' \
+                            "$RUN_SPECULATIVE" >&2
+                        exit 2
+                        ;;
+                esac
+                run_variant=$(resolve_variant "$RUN_VARIANT")
+                run_backend benchmark "$run_variant" "$RUN_SPECULATIVE"
+                ;;
+            *)
+                printf 'Unknown benchmark type: %s (use speed or agentic).\n\n' \
+                    "${benchmark_type:-<missing>}" >&2
+                usage >&2
+                exit 2
+                ;;
+        esac
         ;;
     *)
         printf 'Unknown command: %s\n\n' "$command" >&2

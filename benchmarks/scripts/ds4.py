@@ -148,7 +148,7 @@ def main():
     proposed = sum(row["proposed"] for row in rows)
     accepted = sum(row["accepted"] for row in rows)
     print(
-        f"| **Average** | — | **{target_average:.2f} t/s** "
+        f"| **Macro average** | — | **{target_average:.2f} t/s** "
         f"| **{speculative_average:.2f} t/s** "
         f"| **{speculative_average / target_average:.2f}x** "
         f"| **{accepted / proposed:.1%}** |"

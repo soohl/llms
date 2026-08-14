@@ -22,14 +22,17 @@ The model and GGUF are Apache 2.0; llama.cpp is MIT.
 ## Run
 
 ```sh
-./llm setup gemma-4-31b llamacpp
+./llm setup gemma-4-31b
 ./llm download gemma-4-31b q4-0
-./llm serve gemma-4-31b llamacpp q4-0
-./llm benchmark gemma-4-31b llamacpp q4-0
+./llm serve gemma-4-31b q4-0
+./llm benchmark speed gemma-4-31b q4-0
+./llm benchmark agentic gemma-4-31b q4-0
 ```
 
 The server exposes an OpenAI-compatible API at
 `http://127.0.0.1:8080/v1` with model name `gemma-4-31b`.
+The `llamacpp-gemma` compatibility profile enables the embedded Jinja template
+and Gemma's per-request thinking mode.
 
 Defaults: 16,384 context, full CUDA offload, Flash Attention, F16 KV,
 1,024/512 batch/micro-batch, and Google's recommended sampling values. These

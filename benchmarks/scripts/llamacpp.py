@@ -299,7 +299,7 @@ def print_speculative_suite(target_rows, speculative_rows):
     accepted = sum(row["accepted"] for row in speculative_rows)
     drafted = sum(row["drafted"] for row in speculative_rows)
     print(
-        f"| **Average** | — | — | **{target_average:.2f} t/s** "
+        f"| **Macro average** | — | — | **{target_average:.2f} t/s** "
         f"| **{spec_average:.2f} t/s** | **{spec_average / target_average:.2f}x** "
         f"| **{accepted / drafted:.1%}** |"
     )

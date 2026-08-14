@@ -36,5 +36,5 @@ profile fits with useful headroom.
 | 2,048/2,048 and 4,096 batches | Regressed long-context throughput |
 
 ```sh
-./llm benchmark gemma-4-31b llamacpp q4-0
+./llm benchmark speed gemma-4-31b q4-0
 ```

@@ -19,15 +19,17 @@ State the licenses and access restrictions.
 ## Run
 
 ```sh
-./llm setup <model> <backend>
+./llm setup <model>
 ./llm download <model> <variant>
 ./llm download <model> <variant> --speculative
-./llm serve <model> <backend>
-./llm benchmark <model> <backend>
+./llm serve <model>
+./llm benchmark speed <model>
+./llm benchmark agentic <model>
 ```
 
 Record the endpoint, tuned defaults, important overrides, and limitations.
 Link to [BENCHMARK.md](BENCHMARK.md).
 
 Also copy `TEMPLATE_MODEL.conf` to `model.conf`; `llm` discovers the model
-from that file.
+from that file. Select an existing compatibility profile from `compat/`, or
+add a small inherited profile for a new backend/model protocol combination.

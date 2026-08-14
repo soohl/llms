@@ -1,0 +1,16 @@
+{
+  "extends": "llamacpp-openai",
+  "pi": {
+    "compat": {
+      "thinkingFormat": "qwen-chat-template"
+    }
+  },
+  "benchmark": {
+    "reasoning": {
+      "mode": "native-strong",
+      "piThinking": "high",
+      "control": "toggle",
+      "nativeValue": "enabled"
+    }
+  }
+}

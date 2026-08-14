@@ -1,0 +1,43 @@
+{
+  "gpt-5.6-luna (historical baseline)": {
+    "source": "Pi 0.84.1, openai-codex/gpt-5.6-luna, high reasoning, 65K context",
+    "tasks": {
+      "01-python-repair": {
+        "passed": true,
+        "score": 6,
+        "max_score": 6,
+        "elapsed_seconds": 207.7,
+        "model_turns": 11,
+        "tool_call_count": 22,
+        "tool_error_count": 3,
+        "cache_read": 34816,
+        "cache_write": 0,
+        "compaction_count": 0
+      },
+      "02-data-reconciliation": {
+        "passed": true,
+        "score": 12,
+        "max_score": 12,
+        "elapsed_seconds": 185.8,
+        "model_turns": 7,
+        "tool_call_count": 10,
+        "tool_error_count": 1,
+        "cache_read": 30720,
+        "cache_write": 0,
+        "compaction_count": 0
+      },
+      "03-dependency-planner": {
+        "passed": true,
+        "score": 20,
+        "max_score": 20,
+        "elapsed_seconds": 311.2,
+        "model_turns": 16,
+        "tool_call_count": 27,
+        "tool_error_count": 3,
+        "cache_read": 103936,
+        "cache_write": 0,
+        "compaction_count": 0
+      }
+    }
+  }
+}
