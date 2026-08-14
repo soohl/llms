@@ -107,8 +107,8 @@ The outcome-graded agent suite accepts the same local `<model> [variant]`
 identity as the speed suite; the model configuration selects the backend. Every task gets a
 fresh Docker `sbx` sandbox; Pi, its tools, the task workspace, and the hidden
 grader all execute in that sandbox. The standard profile fixes context at
-65,536 tokens, maximum output at 4,096, temperature at zero, and compaction
-settings across models. Reasoning uses each model's compatibility-profile
+65,536 tokens, maximum output per turn at 16,384, temperature at zero, and
+compaction settings across models. Reasoning uses each model's compatibility-profile
 definition of `native-strong`; it is not a normalized reasoning-token budget.
 Only the local model endpoint is reachable from the sandbox; the suite has no
 internet or search tool.

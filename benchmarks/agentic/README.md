@@ -19,7 +19,7 @@ The benchmark candidate and every available tool are local. All models use:
 
 - the currently installed Pi runtime;
 - native-strong reasoning, resolved to each model's native control;
-- a 65,536-token context and 4,096-token maximum output;
+- a 65,536-token context and 16,384-token maximum output per turn;
 - temperature zero for OpenAI-compatible local models;
 - a 2,048-token compaction reserve and 1,024 recent tokens;
 - identical offline prompts, tools, and agent settings;

@@ -39,7 +39,7 @@ Speed results are printed to stdout and create no files.
 - identical prompts and offline tool definitions;
 - no internet, web-search extension, or external credential;
 - sandbox network access restricted to the local candidate endpoint;
-- fixed 65,536 context, 4,096 maximum output, temperature zero for
+- fixed 65,536 context, 16,384 maximum output per turn, temperature zero for
   OpenAI-compatible local models, native-strong reasoning, and fixed compaction
   settings;
 - one compact `results.jsonl` record containing score, generated-token usage,

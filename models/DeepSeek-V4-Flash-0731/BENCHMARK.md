@@ -22,19 +22,21 @@ and was faster at every prefill frontier in this run.
 
 ## Agentic ability
 
-Offline sandbox profile: 65,536 context, native-strong reasoning, no internet
-or web-search tool. Run date: 2026-08-14.
+Offline sandbox profile: 65,536 context, 16,384 maximum output per turn,
+native-strong reasoning, and no internet or web-search tool. Run date:
+2026-08-14.
 
 | Task | Difficulty | Result | Score | Time | Generated | Reasoning est. |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| Python repair | easy | PASS | 6/6 | 198.4s | 6,566 | ≈2,531 |
-| Data reconciliation | medium | FAIL | 0/12 | 125.1s | 4,229 | ≈3,524 |
-| Dependency planner | hard | FAIL | 0/20 | 137.3s | 4,537 | ≈3,824 |
-| **Total** | — | **1/3** | **6/38** | **460.8s** | **15,332** | **≈9,879** |
+| Python repair | easy | FAIL | 4/6 | 138.6s | 4,528 | ≈1,100 |
+| Data reconciliation | medium | FAIL | 10/12 | 211.4s | 7,038 | ≈2,591 |
+| Dependency planner | hard | PASS | 20/20 | 461.4s | 15,796 | ≈7,703 |
+| **Total** | — | **1/3** | **34/38** | **811.3s** | **27,362** | **≈11,394** |
 
-The medium run produced none of its required output artifacts. The hard run
-inspected the workspace but did not complete the implementation. Full metrics
-are in [`benchmarks/agentic/REPORT.md`](../../benchmarks/agentic/REPORT.md).
+The larger bound allowed the hard task to complete. The easy run missed its
+summary/validation check, while the medium run passed every check except exact
+anomaly coverage. Full metrics are in
+[`benchmarks/agentic/REPORT.md`](../../benchmarks/agentic/REPORT.md).
 
 ## Web research
 

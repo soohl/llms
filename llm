@@ -150,6 +150,10 @@ HELP
 
 task_usage() {
     suite=$1
+    case "$suite" in
+        agentic) max_output=16384 ;;
+        research) max_output=4096 ;;
+    esac
     cat <<HELP
 Usage:
   ./llm benchmark $suite <model> [variant] [options]
@@ -159,7 +163,7 @@ Reasoning: native-strong (fixed; resolved by compatibility profile)
 Options:
   --task ID                 Run one task (repeatable; default: all)
   --context-window TOKENS   Default: 65536
-  --max-output TOKENS       Default: 4096
+  --max-output TOKENS       Default: $max_output
   --reserve-tokens TOKENS   Default: 2048
   --keep-recent-tokens N    Default: 1024
   --retries N               Default: 2

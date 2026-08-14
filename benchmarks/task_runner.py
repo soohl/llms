@@ -28,11 +28,13 @@ SUITE_NAME = os.environ.get("PI_BENCH_SUITE", "agentic")
 SUITES = {
     "agentic": {
         "title": "Agentic ability benchmark",
+        "max_output": 16384,
         "tools": ("read", "write", "edit", "grep", "find", "ls", "bash"),
         "web_search": False,
     },
     "research": {
         "title": "Web research benchmark",
+        "max_output": 4096,
         "tools": (
             "read",
             "write",
@@ -213,7 +215,7 @@ def selected_models_config(
         "reasoning": spec.reasoning,
         "input": ["text"],
         "contextWindow": context_window or 65536,
-        "maxTokens": max_output or 4096,
+        "maxTokens": max_output or SUITE["max_output"],
         "samplingParams": {"temperature": 0},
         "cost": {
             "input": 0,
@@ -1115,7 +1117,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="run only this task (repeatable; default: all)",
     )
     run_parser.add_argument("--context-window", type=int, default=65536)
-    run_parser.add_argument("--max-output", type=int, default=4096)
+    run_parser.add_argument(
+        "--max-output", type=int, default=SUITE["max_output"]
+    )
     run_parser.add_argument("--reserve-tokens", type=int, default=2048)
     run_parser.add_argument("--keep-recent-tokens", type=int, default=1024)
     run_parser.add_argument("--retries", type=int, default=2)
