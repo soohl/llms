@@ -1,18 +1,16 @@
 # Agentic ability benchmark
 
-Benchmark: `pi-agentic-64k-native-strong-v7`
-
 | Task | Difficulty | Model | Result | Score | Time | Generated | Reasoning est. | Turns | Tools/errors | Cache R/W | Compactions |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 01-python-repair | easy | `deepseek-v4-flash-0731` | PASS | 6/6 | 172.3s | 5,698 | ≈1,696 | 9 | 14/0 | 46,245/4,024 | 0 |
-| 02-data-reconciliation | medium | `deepseek-v4-flash-0731` | not run | — | — | — | — | — | — | — | — | — |
-| 03-dependency-planner | hard | `deepseek-v4-flash-0731` | not run | — | — | — | — | — | — | — | — | — |
+| 01-python-repair | easy | `deepseek-v4-flash-0731` | PASS | 6/6 | 198.4s | 6,566 | ≈2,531 | 12 | 16/1 | 77,160/4,219 | 0 |
+| 02-data-reconciliation | medium | `deepseek-v4-flash-0731` | FAIL | 0/12 | 125.1s | 4,229 | ≈3,524 | 2 | 1/0 | 2,691/3,209 | 0 |
+| 03-dependency-planner | hard | `deepseek-v4-flash-0731` | FAIL | 0/20 | 137.3s | 4,537 | ≈3,824 | 4 | 6/0 | 8,916/3,701 | 0 |
 
 ## Totals
 
 | Model | Tasks passed | Task score | Time | Generated | Reasoning est. | Turns | Tools/errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `deepseek-v4-flash-0731` | 1/1 | 6/6 | 172.3s | 5,698 | ≈1,696 | 9 | 14/0 |
+| `deepseek-v4-flash-0731` | 1/3 | 6/38 | 460.8s | 15,332 | ≈9,879 | 18 | 23/1 |
 
 ## Historical baseline — not directly comparable
 

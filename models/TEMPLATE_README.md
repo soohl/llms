@@ -25,6 +25,7 @@ State the licenses and access restrictions.
 ./llm serve <model>
 ./llm benchmark speed <model>
 ./llm benchmark agentic <model>
+./llm benchmark research <model>
 ```
 
 Record the endpoint, tuned defaults, important overrides, and limitations.

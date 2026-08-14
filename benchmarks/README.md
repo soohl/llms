@@ -1,6 +1,6 @@
 # Benchmark methodology
 
-The two suites share one CLI but measure different properties. Do not combine
+The three suites share one CLI but measure different properties. Do not combine
 their numbers into one score.
 
 ## Speed
@@ -36,9 +36,9 @@ Speed results are printed to stdout and create no files.
 - speculative decoding is disabled for the standard ability profile;
 - a fresh copied workspace and fresh Docker `sbx` per task;
 - hidden outcome grading after the agent finishes;
-- identical prompts and tool definitions;
-- the same OpenAI-backed `web_search` tool, executed inside the sandbox when
-  selected by the local model;
+- identical prompts and offline tool definitions;
+- no internet, web-search extension, or external credential;
+- sandbox network access restricted to the local candidate endpoint;
 - fixed 65,536 context, 4,096 maximum output, temperature zero for
   OpenAI-compatible local models, native-strong reasoning, and fixed compaction
   settings;
@@ -60,12 +60,26 @@ The report retains GPT-5.6 Luna as a historical baseline only. It is not
 runnable from the local benchmark CLI and used an older, non-identical 65K
 profile, so use it as context rather than a controlled head-to-head result.
 
+## Web research
+
+`./llm benchmark research` measures sourced web-research quality on three
+separate fixed tasks. It retains the agentic suite's local model controls,
+sandbox isolation, hidden grading, context, and cleanup policy, but adds the
+pinned OpenAI-backed `web_search` tool. Each task requires multiple searches
+and multiple distinct tools in addition to an exact research artifact and
+official-source citations.
+
+The sandbox cannot access arbitrary public endpoints: only the candidate model
+and OpenAI search/authentication endpoints are allowed. Search results can
+change over time, so research scores are less reproducible than the offline
+agentic suite and should be compared using runs made close together.
+
 ## Fair-comparison checklist
 
 1. Run all candidates on the same otherwise-idle host.
 2. Use the same model quantization and speculative policy being compared.
 3. Keep benchmark defaults unchanged; overrides create a different profile.
 4. Run one model at a time and stop unrelated inference workloads.
-5. Record backend/model revisions and rerun close speed or agentic outcomes.
-6. Use the same pinned web-search extension/model; web results can change over
-   time, so record the run date.
+5. Record backend/model revisions and rerun close outcomes.
+6. For research comparisons, use the same pinned search extension/model and
+   run date.

@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Run outcome-graded long-horizon tasks against a local model server."""
+"""Run outcome-graded task suites against a local model server."""
 
 from __future__ import annotations
 
 import argparse
+import atexit
 import datetime as dt
 import hashlib
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -21,11 +23,37 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+BENCHMARK_ROOT = Path(__file__).resolve().parent
+SUITE_NAME = os.environ.get("PI_BENCH_SUITE", "agentic")
+SUITES = {
+    "agentic": {
+        "title": "Agentic ability benchmark",
+        "tools": ("read", "write", "edit", "grep", "find", "ls", "bash"),
+        "web_search": False,
+    },
+    "research": {
+        "title": "Web research benchmark",
+        "tools": (
+            "read",
+            "write",
+            "edit",
+            "grep",
+            "find",
+            "ls",
+            "bash",
+            "web_search",
+        ),
+        "web_search": True,
+    },
+}
+if SUITE_NAME not in SUITES:
+    raise SystemExit(f"unknown benchmark suite: {SUITE_NAME}")
+SUITE = SUITES[SUITE_NAME]
+ROOT = BENCHMARK_ROOT / SUITE_NAME
 TASK_ROOT = ROOT / "tasks"
 RESULTS_PATH = ROOT / "results.jsonl"
-BENCHMARK_ID = "pi-agentic-64k-native-strong-v7"
-TOOLS = ("read", "write", "edit", "grep", "find", "ls", "bash", "web_search")
+TOOLS = SUITE["tools"]
+WEB_SEARCH_ENABLED = SUITE["web_search"]
 HOST_AGENT_DIR = Path(
     os.environ.get("PI_BENCH_HOST_AGENT_DIR", Path.home() / ".pi" / "agent")
 ).expanduser()
@@ -44,6 +72,8 @@ TASKS = {
     for item in json.loads((ROOT / "tasks.json").read_text())["tasks"]
 }
 THINKING_LEVELS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
+ACTIVE_RUN_DIRS: set[Path] = set()
+ACTIVE_SANDBOXES: set[str] = set()
 
 
 @dataclass(frozen=True)
@@ -141,7 +171,10 @@ def discover_pi_runtime() -> PiRuntime:
 
 def provider_auth(spec: ModelSpec) -> dict:
     if not spec.base_url:
-        raise RuntimeError("local agentic model URL is missing")
+        raise RuntimeError(f"local {SUITE_NAME} model URL is missing")
+    auth = {spec.provider: {"type": "api_key", "key": "local"}}
+    if not WEB_SEARCH_ENABLED:
+        return auth
     host_auth = load(HOST_AGENT_DIR / "auth.json", {})
     search_credential = host_auth.get(WEB_SEARCH_PROVIDER)
     if not isinstance(search_credential, dict):
@@ -149,10 +182,8 @@ def provider_auth(spec: ModelSpec) -> dict:
             f"{WEB_SEARCH_PROVIDER} credential is missing from "
             f"{HOST_AGENT_DIR / 'auth.json'}"
         )
-    return {
-        spec.provider: {"type": "api_key", "key": "local"},
-        WEB_SEARCH_PROVIDER: search_credential,
-    }
+    auth[WEB_SEARCH_PROVIDER] = search_credential
+    return auth
 
 
 def rewrite_local_urls(value):
@@ -175,7 +206,7 @@ def selected_models_config(
     max_output: int | None,
 ) -> dict:
     if not spec.base_url:
-        raise RuntimeError("local agentic model URL is missing")
+        raise RuntimeError(f"local {SUITE_NAME} model URL is missing")
     model = {
         "id": spec.model,
         "name": spec.benchmark_model or spec.model,
@@ -237,9 +268,10 @@ def prepare_run(
 ) -> tuple[Path, Path, Path, str]:
     run_dir = Path(
         tempfile.mkdtemp(
-            prefix=f"pi-agentic-{task_id}-{slug(spec.report_name)}-"
+            prefix=f"pi-{SUITE_NAME}-{task_id}-{slug(spec.report_name)}-"
         )
     )
+    ACTIVE_RUN_DIRS.add(run_dir)
 
     workspace = run_dir / "workspace"
     shutil.copytree(TASK_ROOT / task_id / "workspace", workspace)
@@ -258,13 +290,14 @@ def prepare_run(
     (runtime_config / "settings.json").write_text(
         json.dumps(settings, indent=2) + "\n"
     )
-    (runtime_config / "web-search.json").write_text(
-        json.dumps(
-            {"provider": WEB_SEARCH_PROVIDER, "model": WEB_SEARCH_MODEL},
-            indent=2,
+    if WEB_SEARCH_ENABLED:
+        (runtime_config / "web-search.json").write_text(
+            json.dumps(
+                {"provider": WEB_SEARCH_PROVIDER, "model": WEB_SEARCH_MODEL},
+                indent=2,
+            )
+            + "\n"
         )
-        + "\n"
-    )
 
     return run_dir, workspace, runtime_config, prompt
 
@@ -277,6 +310,23 @@ def remove_sandbox(name: str | None) -> None:
             stderr=subprocess.DEVNULL,
             check=False,
         )
+        ACTIVE_SANDBOXES.discard(name)
+
+
+def cleanup_active() -> None:
+    for name in tuple(ACTIVE_SANDBOXES):
+        remove_sandbox(name)
+    for run_dir in tuple(ACTIVE_RUN_DIRS):
+        shutil.rmtree(run_dir, ignore_errors=True)
+        ACTIVE_RUN_DIRS.discard(run_dir)
+
+
+def handle_termination(_signum, _frame) -> None:
+    raise KeyboardInterrupt
+
+
+atexit.register(cleanup_active)
+signal.signal(signal.SIGTERM, handle_termination)
 
 
 def create_sandbox(
@@ -289,21 +339,15 @@ def create_sandbox(
     # from this name, so keep it comfortably bounded.
     digest = hashlib.sha256(run_dir.name.encode()).hexdigest()[:8]
     name = f"pih-{slug(run_dir.name)[:44].rstrip('-')}-{digest}"
+    mounts = [str(run_dir), f"{runtime.mount}:ro"]
+    if WEB_SEARCH_ENABLED:
+        mounts.append(f"{WEB_SEARCH_EXTENSION}:ro")
     create = run_capture(
-        [
-            "sbx",
-            "create",
-            "--quiet",
-            "--name",
-            name,
-            "shell",
-            str(run_dir),
-            f"{runtime.mount}:ro",
-            f"{WEB_SEARCH_EXTENSION}:ro",
-        ]
+        ["sbx", "create", "--quiet", "--name", name, "shell", *mounts]
     )
     if create.returncode:
         raise RuntimeError(create.stderr.strip())
+    ACTIVE_SANDBOXES.add(name)
     try:
         parsed_url = urlparse(base_url)
         if not parsed_url.port:
@@ -318,7 +362,7 @@ def create_sandbox(
                         "127.0.0.1",
                     )
                 ),
-                *WEB_SEARCH_ALLOWED_HOSTS,
+                *(WEB_SEARCH_ALLOWED_HOSTS if WEB_SEARCH_ENABLED else ()),
             )
         )
         policy = run_capture(
@@ -337,6 +381,14 @@ def create_sandbox(
         copied = run_capture(["sbx", "cp", str(config), f"{name}:/tmp/pi-agent"])
         if copied.returncode:
             raise RuntimeError(copied.stderr.strip())
+        web_search_setup = ""
+        if WEB_SEARCH_ENABLED:
+            web_search_setup = (
+                "cp /tmp/pi-agent/web-search.json "
+                "/home/agent/.pi/agent/web-search.json && "
+                "chown -R agent:agent /home/agent/.pi && "
+                "chmod 600 /home/agent/.pi/agent/web-search.json"
+            )
         secured = run_capture(
             [
                 "sbx",
@@ -349,11 +401,8 @@ def create_sandbox(
                 "chown -R agent:agent /tmp/pi-agent && "
                 "chmod 700 /tmp/pi-agent && "
                 "chmod 600 /tmp/pi-agent/auth.json && "
-                "mkdir -p /home/agent/.pi/agent && "
-                "cp /tmp/pi-agent/web-search.json "
-                "/home/agent/.pi/agent/web-search.json && "
-                "chown -R agent:agent /home/agent/.pi && "
-                "chmod 600 /home/agent/.pi/agent/web-search.json",
+                "mkdir -p /home/agent/.pi/agent"
+                + (" && " + web_search_setup if web_search_setup else ""),
             ]
         )
         if secured.returncode:
@@ -375,7 +424,7 @@ def agent_command(
     prompt: str,
     args: argparse.Namespace,
 ) -> list[str]:
-    return [
+    command = [
         "sbx",
         "exec",
         "--workdir",
@@ -403,15 +452,19 @@ def agent_command(
         str(run_dir / "sessions"),
         "--tools",
         ",".join(TOOLS),
-        "--extension",
-        str(WEB_SEARCH_EXTENSION),
         "--no-extensions",
         "--no-skills",
         "--no-prompt-templates",
         "--no-themes",
         "--no-context-files",
-        prompt,
     ]
+    if WEB_SEARCH_ENABLED:
+        command[command.index("--no-extensions"):command.index("--no-extensions")] = [
+            "--extension",
+            str(WEB_SEARCH_EXTENSION),
+        ]
+    command.append(prompt)
+    return command
 
 
 def session_entries(run_dir: Path) -> list[dict]:
@@ -524,6 +577,32 @@ def grade_in_sandbox(task_id: str, run_dir: Path, sandbox: str) -> dict:
     return score
 
 
+def execution_requirements(task_id: str, measured: dict) -> dict | None:
+    required = TASKS[task_id].get("execution_requirements", {})
+    if not required:
+        return None
+    web_calls = measured.get("tool_names", {}).get("web_search", 0)
+    distinct_tools = len(
+        {
+            name
+            for name, count in measured.get("tool_names", {}).items()
+            if name and count
+        }
+    )
+    checks = {
+        "web_search_calls": {
+            "actual": web_calls,
+            "minimum": required.get("min_web_search_calls", 0),
+        },
+        "distinct_tools": {
+            "actual": distinct_tools,
+            "minimum": required.get("min_distinct_tools", 0),
+        },
+    }
+    passed = all(item["actual"] >= item["minimum"] for item in checks.values())
+    return {"passed": passed, "checks": checks}
+
+
 def run_one(
     task_id: str,
     spec: ModelSpec,
@@ -541,9 +620,36 @@ def run_one(
         "max_score": TASKS[task_id]["max_score"],
         "error": "sandbox did not start",
     }
+    configuration = {
+        "reasoning_mode": spec.reasoning_profile,
+        "compatibility_profile": spec.compat_profile,
+        "pi_thinking_level": args.thinking,
+        "temperature": 0,
+        "context_window_override": args.context_window,
+        "max_output_override": args.max_output,
+        "reserve_tokens": args.reserve_tokens,
+        "keep_recent_tokens": args.keep_recent_tokens,
+        "tools": list(TOOLS),
+        "agent_environment": "docker-sbx",
+        "grader_environment": "docker-sbx",
+        "credential_method": (
+            "private sbx cp" if WEB_SEARCH_ENABLED else "local placeholder only"
+        ),
+        "network_policy": (
+            "local model plus OpenAI web search"
+            if WEB_SEARCH_ENABLED
+            else "local model only"
+        ),
+    }
+    if WEB_SEARCH_ENABLED:
+        configuration["web_search"] = {
+            "extension": "pi-web-search",
+            "version": WEB_SEARCH_VERSION,
+            "provider": WEB_SEARCH_PROVIDER,
+            "model": WEB_SEARCH_MODEL,
+        }
     metadata = {
         "timestamp": timestamp(),
-        "benchmark_id": BENCHMARK_ID,
         "task": task_id,
         "difficulty": TASKS[task_id]["difficulty"],
         "model": spec.report_name,
@@ -552,26 +658,7 @@ def run_one(
         "backend": spec.backend,
         "variant": spec.variant,
         "pi_version": runtime.version,
-        "configuration": {
-            "reasoning_mode": spec.reasoning_profile,
-            "compatibility_profile": spec.compat_profile,
-            "pi_thinking_level": args.thinking,
-            "temperature": 0,
-            "context_window_override": args.context_window,
-            "max_output_override": args.max_output,
-            "reserve_tokens": args.reserve_tokens,
-            "keep_recent_tokens": args.keep_recent_tokens,
-            "tools": list(TOOLS),
-            "agent_environment": "docker-sbx",
-            "grader_environment": "docker-sbx",
-            "credential_method": "private sbx cp",
-            "web_search": {
-                "extension": "pi-web-search",
-                "version": WEB_SEARCH_VERSION,
-                "provider": WEB_SEARCH_PROVIDER,
-                "model": WEB_SEARCH_MODEL,
-            },
-        },
+        "configuration": configuration,
     }
     try:
         sandbox = create_sandbox(run_dir, config, runtime, spec.base_url)
@@ -605,7 +692,18 @@ def run_one(
         remove_sandbox(sandbox)
         shutil.rmtree(config, ignore_errors=True)
 
-    passed = returncode == 0 and bool(score.get("passed"))
+    requirements = execution_requirements(task_id, measured)
+    passed = (
+        returncode == 0
+        and bool(score.get("passed"))
+        and (requirements is None or requirements["passed"])
+    )
+    if (
+        requirements is not None
+        and not requirements["passed"]
+        and not score.get("error")
+    ):
+        score["error"] = "required research tool usage was not met"
     compact_score = {
         key: score[key]
         for key in (
@@ -624,6 +722,8 @@ def run_one(
         "metrics": measured,
         "score": compact_score,
     }
+    if requirements is not None:
+        result["execution_requirements"] = requirements
     stderr_text = ""
     stderr_path = run_dir / "stderr.log"
     if not passed and stderr_path.exists():
@@ -632,6 +732,7 @@ def run_one(
         append_result(result)
     finally:
         shutil.rmtree(run_dir, ignore_errors=True)
+        ACTIVE_RUN_DIRS.discard(run_dir)
 
     print(
         f"{task_id} {spec.report_name}: {'PASS' if passed else 'FAIL'} "
@@ -671,8 +772,6 @@ def latest_results(
 ) -> dict[tuple[str, str], dict]:
     result = {}
     for entry in result_entries():
-        if entry.get("benchmark_id") != BENCHMARK_ID:
-            continue
         model = entry.get("model")
         if model_filter and model not in model_filter:
             continue
@@ -684,9 +783,7 @@ def write_report() -> None:
     latest = latest_results()
     model_names = sorted({model for _, model in latest})
     lines = [
-        "# Agentic ability benchmark",
-        "",
-        f"Benchmark: `{BENCHMARK_ID}`",
+        f"# {SUITE['title']}",
         "",
     ]
     if model_names:
@@ -809,25 +906,33 @@ def sbx_status(run_diagnose: bool = False) -> tuple[bool, str]:
 
 def self_test() -> int:
     checks: list[tuple[str, bool]] = []
-    web_package = load(WEB_SEARCH_EXTENSION / "package.json", {})
-    checks.extend(
-        [
-            (
-                "pi-web-search extension",
-                web_package.get("name") == "pi-web-search"
-                and web_package.get("version") == WEB_SEARCH_VERSION,
-            ),
-            (
-                "OpenAI web-search credential",
-                isinstance(
-                    load(HOST_AGENT_DIR / "auth.json", {}).get(
-                        WEB_SEARCH_PROVIDER
-                    ),
-                    dict,
+    if WEB_SEARCH_ENABLED:
+        web_package = load(WEB_SEARCH_EXTENSION / "package.json", {})
+        checks.extend(
+            [
+                (
+                    "pi-web-search extension",
+                    web_package.get("name") == "pi-web-search"
+                    and web_package.get("version") == WEB_SEARCH_VERSION,
                 ),
-            ),
-        ]
-    )
+                (
+                    "OpenAI web-search credential",
+                    isinstance(
+                        load(HOST_AGENT_DIR / "auth.json", {}).get(
+                            WEB_SEARCH_PROVIDER
+                        ),
+                        dict,
+                    ),
+                ),
+            ]
+        )
+    else:
+        checks.append(
+            (
+                "offline tool and network profile",
+                "web_search" not in TOOLS and not WEB_SEARCH_ENABLED,
+            )
+        )
     for task_id, task in TASKS.items():
         prompt = TASK_ROOT / task_id / "PROMPT.md"
         workspace = TASK_ROOT / task_id / "workspace"
@@ -914,19 +1019,20 @@ def preflight(model: ModelSpec | None) -> int:
         checks.append(("Pi runtime", True, f"{runtime.version} at {runtime.mount}"))
     except RuntimeError as error:
         checks.append(("Pi runtime", False, str(error)))
-    web_package = load(WEB_SEARCH_EXTENSION / "package.json", {})
-    checks.append(
-        (
-            "OpenAI web search",
-            web_package.get("name") == "pi-web-search"
-            and web_package.get("version") == WEB_SEARCH_VERSION,
+    if WEB_SEARCH_ENABLED:
+        web_package = load(WEB_SEARCH_EXTENSION / "package.json", {})
+        checks.append(
             (
-                f"pi-web-search {web_package.get('version')} at "
-                f"{WEB_SEARCH_EXTENSION}; "
-                f"{WEB_SEARCH_PROVIDER}/{WEB_SEARCH_MODEL}"
-            ),
+                "OpenAI web search",
+                web_package.get("name") == "pi-web-search"
+                and web_package.get("version") == WEB_SEARCH_VERSION,
+                (
+                    f"pi-web-search {web_package.get('version')} at "
+                    f"{WEB_SEARCH_EXTENSION}; "
+                    f"{WEB_SEARCH_PROVIDER}/{WEB_SEARCH_MODEL}"
+                ),
+            )
         )
-    )
 
     for spec in [model] if model else []:
         try:
@@ -987,7 +1093,7 @@ def add_model_argument(parser: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the long-horizon benchmark in Docker Sandboxes"
+        description=f"Run the {SUITE_NAME} benchmark in Docker Sandboxes"
     )
     commands = parser.add_subparsers(dest="action", required=True)
 
@@ -1061,13 +1167,14 @@ def main(argv: list[str] | None = None) -> int:
     validate_run_args(args)
     if not args.base_url:
         raise SystemExit(
-            "agentic benchmarks are local-only; run them through "
-            "./llm benchmark agentic <model> [variant]"
+            f"{SUITE_NAME} benchmarks are local-only; run them through "
+            f"./llm benchmark {SUITE_NAME} <model> [variant]"
         )
     if args.base_url:
         if not args.compat_profile or not args.reasoning_profile_json:
             raise SystemExit(
-                "local agentic runs require compatibility and reasoning profiles"
+                f"local {SUITE_NAME} runs require compatibility and "
+                "reasoning profiles"
             )
         try:
             compat = json.loads(args.compat_json) if args.compat_json else None

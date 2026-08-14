@@ -13,6 +13,7 @@ Weights and backend checkouts stay untracked.
 ./llm serve <model> [variant]
 ./llm benchmark speed <model> [variant]
 ./llm benchmark agentic <model> [variant]
+./llm benchmark research <model> [variant]
 ```
 
 Muse example:
@@ -51,7 +52,9 @@ backends/config/        pinned backend revisions and build settings
 compat/                 reusable local API and chat-template profiles
 benchmarks/speed/       shared speed benchmark inputs
 benchmarks/scripts/     speed benchmark helpers
-benchmarks/agentic/     containerized long-horizon agent benchmark
+benchmarks/agentic/     offline long-horizon agent tasks and results
+benchmarks/research/    web research tasks and results
+benchmarks/task_runner.py shared sandboxed task runner
 models/<Model>/         model.conf, docs, results, and ignored gguf/
 llm                     model discovery and command dispatch
 ```
@@ -107,25 +110,43 @@ grader all execute in that sandbox. The standard profile fixes context at
 65,536 tokens, maximum output at 4,096, temperature at zero, and compaction
 settings across models. Reasoning uses each model's compatibility-profile
 definition of `native-strong`; it is not a normalized reasoning-token budget.
+Only the local model endpoint is reachable from the sandbox; the suite has no
+internet or search tool.
 
 ```sh
 # Docker Sandboxes prerequisite (macOS)
 brew install --cask docker/tap/sbx
 sbx diagnose
-pi install npm:pi-web-search@1.3.1
-pi auth check --provider openai-codex
 
 ./llm benchmark agentic deepseek-v4-flash-0731 mxfp4
 ./llm benchmark agentic report
 ```
 
 The runner starts the selected backend and variant on an ephemeral local port,
-then creates an isolated, temporary Pi provider for it. Candidate inference
-stays local; `pi-web-search` uses `openai-codex/gpt-5.6-luna` only when the
-local agent calls `web_search`. The local server URL is rewritten to
-`host.docker.internal` for `sbx`, and the server is stopped after the suite.
-Temporary workspaces, sessions, logs, and credentials are deleted after each
-task. Only `benchmarks/agentic/results.jsonl` and its generated `REPORT.md`
-remain. See
+then creates an isolated, temporary Pi provider for it. The local server URL
+is rewritten to `host.docker.internal` for `sbx`, and the server is stopped
+after the suite. Temporary workspaces, sessions, and logs are deleted after
+each task. Only `benchmarks/agentic/results.jsonl` and its generated
+`REPORT.md` remain. See
 [`benchmarks/agentic/README.md`](benchmarks/agentic/README.md) for task
 selection and model-limit overrides.
+
+### Web research
+
+The research suite uses the same controlled local-model profile but gives the
+agent the sandboxed `web_search` tool. Its easy, medium, and hard tasks require
+multiple searches, multiple tools, cited sources, and exact outcome-graded
+research artifacts.
+
+```sh
+pi install npm:pi-web-search@1.3.1
+pi auth check --provider openai-codex
+
+./llm benchmark research deepseek-v4-flash-0731 mxfp4
+./llm benchmark research report
+```
+
+Public network access is limited to the OpenAI search and authentication
+endpoints. Search credentials, workspaces, sessions, and logs are temporary;
+only compact results and the generated report remain. See
+[`benchmarks/research/README.md`](benchmarks/research/README.md).

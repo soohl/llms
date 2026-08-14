@@ -138,8 +138,9 @@ Usage:
   ./llm serve <model> [variant] [--speculative on|off]
   ./llm benchmark speed <model> [variant] [options]
   ./llm benchmark agentic <model> [variant] [options]
-  ./llm benchmark agentic report
-  ./llm benchmark agentic self-test
+  ./llm benchmark research <model> [variant] [options]
+  ./llm benchmark <agentic|research> report
+  ./llm benchmark <agentic|research> self-test
 
 Models are discovered from models/*/model.conf.
 HELP
@@ -147,10 +148,11 @@ HELP
     list_models
 }
 
-agentic_usage() {
-    cat <<'HELP'
+task_usage() {
+    suite=$1
+    cat <<HELP
 Usage:
-  ./llm benchmark agentic <model> [variant] [options]
+  ./llm benchmark $suite <model> [variant] [options]
 
 Reasoning: native-strong (fixed; resolved by compatibility profile)
 
@@ -444,19 +446,20 @@ case "$command" in
     benchmark)
         benchmark_type=${2:-}
         case "$benchmark_type" in
-            agentic)
+            agentic|research)
                 require_command python3
                 case "${3:-}" in
                     report|self-test)
                         [ "$#" -eq 3 ] || {
-                            printf 'Unexpected agentic benchmark argument: %s\n' \
-                                "$4" >&2
+                            printf 'Unexpected %s benchmark argument: %s\n' \
+                                "$benchmark_type" "$4" >&2
                             exit 2
                         }
-                        exec python3 "$ROOT/benchmarks/agentic/run.py" "$3"
+                        exec env PI_BENCH_SUITE="$benchmark_type" \
+                            python3 "$ROOT/benchmarks/task_runner.py" "$3"
                         ;;
                     -h|--help)
-                        agentic_usage
+                        task_usage "$benchmark_type"
                         exit
                         ;;
                 esac
@@ -546,7 +549,8 @@ while time.monotonic() < deadline:
 raise SystemExit("timed out waiting for the local model server")
 PY
                 then
-                    printf 'Agentic model server failed. Log: %s\n' \
+                    printf '%s model server failed. Log: %s\n' \
+                        "$benchmark_type" \
                         "$agentic_log" >&2
                     tail -40 "$agentic_log" >&2 || true
                     exit 1
@@ -570,10 +574,12 @@ PY
                         "$PI_THINKING_LEVEL_MAP_JSON"
                     )
                 if [ "${#agentic_args[@]}" -gt 0 ]; then
-                    python3 "$ROOT/benchmarks/agentic/run.py" \
+                    PI_BENCH_SUITE="$benchmark_type" \
+                        python3 "$ROOT/benchmarks/task_runner.py" \
                         "${runner_args[@]}" "${agentic_args[@]}"
                 else
-                    python3 "$ROOT/benchmarks/agentic/run.py" \
+                    PI_BENCH_SUITE="$benchmark_type" \
+                        python3 "$ROOT/benchmarks/task_runner.py" \
                         "${runner_args[@]}"
                 fi
                 ;;
@@ -592,7 +598,7 @@ PY
                 run_backend benchmark "$run_variant" "$RUN_SPECULATIVE"
                 ;;
             *)
-                printf 'Unknown benchmark type: %s (use speed or agentic).\n\n' \
+                printf 'Unknown benchmark type: %s (use speed, agentic, or research).\n\n' \
                     "${benchmark_type:-<missing>}" >&2
                 usage >&2
                 exit 2

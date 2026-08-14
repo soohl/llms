@@ -15,29 +15,24 @@ observable final artifacts. It remains small and locally reproducible.
 
 The runner accepts one repository-local `<model> [variant]` per invocation,
 matching the speed benchmark CLI. The model configuration selects the backend.
-The benchmark candidate must be local; the separate search tool uses OpenAI.
-All models use:
+The benchmark candidate and every available tool are local. All models use:
 
 - the currently installed Pi runtime;
 - native-strong reasoning, resolved to each model's native control;
 - a 65,536-token context and 4,096-token maximum output;
 - temperature zero for OpenAI-compatible local models;
 - a 2,048-token compaction reserve and 1,024 recent tokens;
-- identical prompts, tools, and agent settings;
-- `pi-web-search` pinned to `openai-codex/gpt-5.6-luna`;
+- identical offline prompts, tools, and agent settings;
 - speculative decoding disabled;
 - a fresh Docker `sbx` sandbox for every task;
 - Pi, tools, task commands, and hidden grading inside the sandbox;
-- network access limited to the host's local model endpoint and OpenAI search
-  and authentication endpoints;
+- network access limited to the host's local model endpoint;
 - sequential execution.
 
-Only the selected local provider configuration, fixed benchmark/search
-settings, placeholder local credential, and OpenAI Codex search credential are
-placed in the sandbox with `sbx cp`. The private staging directory is deleted
-after setup. Saved configuration is redacted and no credential is retained in
-run artifacts. No `sbx secret` is used. Custom provider loopback URLs are
-rewritten to `host.docker.internal`.
+Only the selected local provider configuration, fixed benchmark settings, and
+a placeholder local credential are placed in the sandbox. No external
+credential, extension, internet access, or `web_search` tool is available.
+Custom provider loopback URLs are rewritten to `host.docker.internal`.
 
 ## Prerequisites
 
@@ -46,15 +41,12 @@ Install and initialize Docker Sandboxes. On macOS:
 ```sh
 brew install --cask docker/tap/sbx
 sbx diagnose
-pi install npm:pi-web-search@1.3.1
-pi auth check --provider openai-codex
 ```
 
 The runner starts the selected backend and variant on an ephemeral local port,
 creates a temporary Pi provider, rewrites localhost to
 `host.docker.internal` for the sandbox, and stops the server after the suite.
-The candidate model remains local. OpenAI Codex is available only behind
-`web_search` and does not answer the benchmark task directly.
+The candidate model and all task execution remain local.
 
 `native-strong` means DS4 `effort=high`, Qwen and Gemma thinking enabled, and
 Muse `strength=high`. These are native recommended/strong modes, not equal

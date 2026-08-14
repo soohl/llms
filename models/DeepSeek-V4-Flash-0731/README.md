@@ -28,6 +28,7 @@ Model weights, GGUFs, and DS4 are MIT licensed and ungated.
 ./llm serve deepseek-v4-flash-0731
 ./llm benchmark speed deepseek-v4-flash-0731 mxfp4
 ./llm benchmark agentic deepseek-v4-flash-0731 mxfp4
+./llm benchmark research deepseek-v4-flash-0731 mxfp4
 ```
 pre
 Server: `127.0.0.1:8000`. Tuned defaults are 65,536 context, 8,192 prefill
