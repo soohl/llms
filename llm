@@ -62,9 +62,17 @@ load_model_config() {
     for variant in $VARIANTS; do
         download_config "$variant" target >/dev/null
         download_config "$variant" speculative >/dev/null || true
+        download_config "$variant" projector >/dev/null || true
     done
 
-    GGUF_ROOT="$MODEL_DIR/gguf"
+    if [ -n "${MODEL_GGUF_DIR:-}" ]; then
+        case "$MODEL_GGUF_DIR" in
+            /*) GGUF_ROOT=$MODEL_GGUF_DIR ;;
+            *) GGUF_ROOT="$MODEL_DIR/$MODEL_GGUF_DIR" ;;
+        esac
+    else
+        GGUF_ROOT="$MODEL_DIR/gguf"
+    fi
     RUNTIME_ROOT="$MODEL_DIR/.runtime"
     BACKEND_ROOT="$ROOT/backends/$BACKEND"
     BACKEND_ADAPTER="$ROOT/backends/scripts/$BACKEND.sh"
@@ -134,7 +142,7 @@ Local LLM runner
 Usage:
   ./llm list
   ./llm setup <model>
-  ./llm download <model> <variant> [--speculative]
+  ./llm download <model> <variant> [--speculative|--projector]
   ./llm serve <model> [variant] [--speculative on|off]
   ./llm benchmark speed <model> [variant] [options]
   ./llm benchmark agentic <model> [variant] [options]
@@ -225,6 +233,17 @@ download_config() {
                [ -z "${!variant_size_name:-}" ] &&
                [ -z "${!variant_sha_name:-}" ]; then
                 prefix=DOWNLOAD_SPECULATIVE
+            fi
+            ;;
+        projector)
+            prefix="DOWNLOAD_${key}_PROJECTOR"
+            variant_file_name="${prefix}_FILE"
+            variant_size_name="${prefix}_SIZE"
+            variant_sha_name="${prefix}_SHA256"
+            if [ -z "${!variant_file_name:-}" ] &&
+               [ -z "${!variant_size_name:-}" ] &&
+               [ -z "${!variant_sha_name:-}" ]; then
+                prefix=DOWNLOAD_PROJECTOR
             fi
             ;;
         *)
@@ -320,11 +339,17 @@ download_model() {
     if [ "$wanted_kind" = speculative ] &&
        [ -n "${SPECULATIVE_HF_REPO:-}" ]; then
         repo=$SPECULATIVE_HF_REPO
+    elif [ "$wanted_kind" = projector ] &&
+         [ -n "${PROJECTOR_HF_REPO:-}" ]; then
+        repo=$PROJECTOR_HF_REPO
     fi
     revision=${TARGET_HF_REVISION:-}
     if [ "$wanted_kind" = speculative ] &&
        [ -n "${SPECULATIVE_HF_REVISION:-}" ]; then
         revision=$SPECULATIVE_HF_REVISION
+    elif [ "$wanted_kind" = projector ] &&
+         [ -n "${PROJECTOR_HF_REVISION:-}" ]; then
+        revision=$PROJECTOR_HF_REVISION
     fi
     args=(
         download "$repo" "$file"
@@ -418,11 +443,14 @@ case "$command" in
         }
         download_kind=target
         if [ "$#" -eq 4 ]; then
-            [ "$4" = --speculative ] || {
-                printf 'Unknown download option: %s\n' "$4" >&2
-                exit 2
-            }
-            download_kind=speculative
+            case "$4" in
+                --speculative) download_kind=speculative ;;
+                --projector) download_kind=projector ;;
+                *)
+                    printf 'Unknown download option: %s\n' "$4" >&2
+                    exit 2
+                    ;;
+            esac
         fi
         select_model "$2"
         run_variant=$(resolve_variant "$3")

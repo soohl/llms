@@ -15,6 +15,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--server", required=True)
     parser.add_argument("--model", required=True)
+    parser.add_argument("--projector-file", default="")
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--ctx-start", type=int, required=True)
     parser.add_argument("--ctx-max", type=int, required=True)
@@ -93,6 +94,8 @@ def server_command(args, port, context_size, speculative):
         "--port",
         str(port),
     ]
+    if args.projector_file:
+        command.extend(["--mmproj", args.projector_file])
     if speculative:
         if args.speculative_kind != "dflash":
             raise SystemExit(

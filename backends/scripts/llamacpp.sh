@@ -51,6 +51,15 @@ case "${1:-}" in
         speculative=${3:-${LLM_SPECULATIVE:-${LLAMACPP_SPECULATIVE_DEFAULT:-off}}}
         require_llamacpp
         model=$(model_path "$variant")
+        projector=
+        if [ -n "${LLAMACPP_PROJECTOR_FILE:-}" ]; then
+            projector="$GGUF_ROOT/$LLAMACPP_PROJECTOR_FILE"
+            [ -f "$projector" ] || {
+                printf 'Vision projector is missing. Run: ./llm download %s %s --projector\n' \
+                    "$MODEL_ID" "$variant" >&2
+                exit 1
+            }
+        fi
         ctx=${LLM_CTX:-${LLAMACPP_CONTEXT:-32768}}
         batch=${LLM_BATCH:-${LLAMACPP_BATCH:-2048}}
         ubatch=${LLM_UBATCH:-${LLAMACPP_UBATCH:-512}}
@@ -74,6 +83,7 @@ case "${1:-}" in
             --flash-attn on --parallel 1 --host "$host" --port "$port"
             --alias "${API_MODEL_ID:-$MODEL_ID}"
         )
+        [ -z "$projector" ] || args+=(--mmproj "$projector")
         [ "${LLAMACPP_JINJA:-0}" != 1 ] || args+=(--jinja)
         [ -z "${LLAMACPP_TEMPERATURE:-}" ] ||
             args+=(--temp "$LLAMACPP_TEMPERATURE")
@@ -112,6 +122,15 @@ case "${1:-}" in
         require_llamacpp
         require_command python3
         model=$(model_path "$variant")
+        projector=
+        if [ -n "${LLAMACPP_PROJECTOR_FILE:-}" ]; then
+            projector="$GGUF_ROOT/$LLAMACPP_PROJECTOR_FILE"
+            [ -f "$projector" ] || {
+                printf 'Vision projector is missing. Run: ./llm download %s %s --projector\n' \
+                    "$MODEL_ID" "$variant" >&2
+                exit 1
+            }
+        fi
         generated=${LLM_BENCH_GEN_TOKENS:-128}
         if [ "$speculative" = compare ] &&
            [ -z "${LLM_BENCH_GEN_TOKENS:-}" ]; then
@@ -130,6 +149,7 @@ case "${1:-}" in
             "$ROOT/benchmarks/scripts/llamacpp.py"
             --server "$server" \
             --model "$model" \
+            --projector-file "$projector" \
             --prompt "$ROOT/benchmarks/speed/promessi-sposi.txt" \
             --ctx-start "${LLM_BENCH_CTX_START:-128}" \
             --ctx-max "${LLM_BENCH_CTX_MAX:-16384}" \
