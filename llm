@@ -80,7 +80,7 @@ load_model_config() {
 
 load_compat_profile() {
     profile_values=$(
-        python3 "$ROOT/compat/resolve.py" "$COMPAT_PROFILE" \
+        python3 "$ROOT/compatibility/resolve.py" "$COMPAT_PROFILE" \
             --backend "$BACKEND" --format shell
     )
     eval "$profile_values"

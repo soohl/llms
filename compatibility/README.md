@@ -50,5 +50,5 @@ benchmarks do not use it.
 To inspect a resolved profile:
 
 ```sh
-python3 compat/resolve.py llamacpp-qwen --backend llamacpp
+python3 compatibility/resolve.py llamacpp-qwen --backend llamacpp
 ```

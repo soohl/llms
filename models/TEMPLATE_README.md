@@ -33,5 +33,6 @@ Record the endpoint, tuned defaults, important overrides, and limitations.
 Link to [BENCHMARK.md](BENCHMARK.md).
 
 Also copy `TEMPLATE_MODEL.conf` to `model.conf`; `llm` discovers the model
-from that file. Select an existing compatibility profile from `compat/`, or
-add a small inherited profile for a new backend/model protocol combination.
+from that file. Select an existing compatibility profile from
+`compatibility/`, or add a small inherited profile for a new backend/model
+protocol combination.

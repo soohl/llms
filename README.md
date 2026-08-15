@@ -44,7 +44,7 @@ never loaded unless `--speculative` is passed.
 ```text
 backends/scripts/       backend setup, serve, and benchmark adapters
 backends/config/        pinned backend revisions and build settings
-compat/                 reusable local API and chat-template profiles
+compatibility/          reusable local API and chat-template profiles
 benchmarks/speed/       shared speed benchmark inputs
 benchmarks/scripts/     speed and local-server benchmark helpers
 benchmarks/agentic/     offline long-horizon agent tasks and results
@@ -60,7 +60,7 @@ hard-coded in `llm`. Add a model by copying
 [`TEMPLATE_README.md`](models/TEMPLATE_README.md). A new backend
 type also needs config under `backends/config/` and an adapter under
 `backends/scripts/`. Each model selects a reusable `COMPAT_PROFILE` from
-`compat/`; the resolver configures Pi's API dialect and any chat-template
+`compatibility/`; the resolver configures Pi's API dialect and any chat-template
 server settings. Model settings use backend prefixes such as `LLAMACPP_*` and
 `DS4_*`; portable runtime overrides retain the `LLM_*` prefix.
 
