@@ -33,8 +33,8 @@ Model and drafter artifacts are Apache 2.0 and ungated; llama.cpp is MIT.
 
 Defaults: 8,192 context, full target CUDA offload, Flash Attention, F16 KV, and
 the official thinking-mode sampling values. The tested server used 19,150 MiB
-VRAM, while DFlash used 20,702 MiB. DFlash is enabled by default, macro-averages
-1.60x in the prompt suite, and can be disabled with `--speculative off`. See
+VRAM, while DFlash used 20,702 MiB. DFlash macro-averages 1.60x in the prompt
+suite. Speculative decoding is opt-in with `--speculative`; see
 [BENCHMARK.md](BENCHMARK.md).
 
 The `llamacpp-qwen` compatibility profile enables the embedded Jinja template

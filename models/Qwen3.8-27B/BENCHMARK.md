@@ -29,43 +29,37 @@ MiB according to `nvidia-smi`.
 ./llm benchmark speed qwen3.8-27b q4-k-m
 ```
 
-## Agentic ability
+## MTP speculative decoding
 
-Text-only profile with 65,536 context, 16,384 maximum output per turn,
-native-strong reasoning, temperature zero, and speculative decoding disabled:
+The official Q4_0 MTP draft was fully GPU-offloaded with four draft tokens, a
+0.75 minimum draft probability, and 2,048/512 batch/micro-batch. The
+target-only comparison used 2,048/2,048.
 
-| Task | Difficulty | Result | Score | Time | Generated |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Python repair | Easy | PASS | 6/6 | 507.5s | 20,110 |
-| Data reconciliation | Medium | PASS | 12/12 | 421.9s | 16,747 |
-| Dependency planner | Hard | FAIL | 0/20 | 405.1s | 16,384 |
-| **Total** | — | **2/3** | **18/38** | **1,334.4s** | **53,241** |
+| Prompt | Prompt tokens | Generated | Target decode | MTP decode | Speedup | Acceptance |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Technical | 19 | 512 | 43.80 t/s | 81.04 t/s | 1.85x | 81.1% |
+| Coding | 26 | 512 | 43.81 t/s | 92.54 t/s | 2.11x | 85.4% |
+| Analysis | 28 | 512 | 43.80 t/s | 79.42 t/s | 1.81x | 80.4% |
+| **Macro average** | — | — | **43.80 t/s** | **84.33 t/s** | **1.93x** | **82.4%** |
 
-The model used 17 turns and 27 successful tool calls with no tool errors. It
-passed every check in the easy and medium tasks. In the hard task it consumed
-the complete output allowance in one reasoning turn, made no tool call, and
-therefore produced no gradable implementation.
+The MTP smoke server used 20,178 MiB, 1,144 MiB more than target-only.
 
-```sh
-./llm benchmark agentic qwen3.8-27b q4-k-m
-```
+| Maximum draft | MTP decode | Speedup | Acceptance |
+| ---: | ---: | ---: | ---: |
+| 1 | 62.71 t/s | 1.43x | 94.6% |
+| 2 | 72.15 t/s | 1.65x | 88.2% |
+| 3 | 78.27 t/s | 1.79x | 85.3% |
+| **4** | **84.33 t/s** | **1.93x** | **82.4%** |
+| 5 | 79.45 t/s | 1.81x | 77.7% |
+| 6 | 79.39 t/s | 1.81x | 72.3% |
+| 8 | 81.99 t/s | 1.87x | 72.7% |
 
-## Web research
-
-Text-only profile with 65,536 context, 4,096 maximum output per turn,
-native-strong reasoning, temperature zero, and the controlled web-search tool:
-
-| Task | Difficulty | Result | Score | Time | Generated |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Python standards | Easy | PASS | 8/8 | 119.4s | 3,948 |
-| HTTP retry policy | Medium | PASS | 14/14 | 145.9s | 4,566 |
-| XZ incident | Hard | FAIL | 9/20 | 191.9s | 6,239 |
-| **Total** | — | **2/3** | **31/42** | **457.2s** | **14,753** |
-
-The model met every search/tool execution requirement and had no tool errors.
-The hard-task artifact missed build targeting, the impact dependency path, Red
-Hat impact and mitigation, and the required citation-source mix.
+Four draft tokens had the highest macro-average throughput and consistent gains
+across all three prompts. Speculative decoding remains opt-in.
 
 ```sh
-./llm benchmark research qwen3.8-27b q4-k-m
+./llm benchmark speed qwen3.8-27b q4-k-m --compare
 ```
+
+Cross-model agentic and research results are consolidated in the
+[combined benchmark report](../../BENCHMARK.md).

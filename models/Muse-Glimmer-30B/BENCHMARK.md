@@ -50,6 +50,6 @@ high. It does not improve prefill and may regress on low-acceptance text.
 | DFlash max 4 | Faster than tested 8, 12, and 15 |
 
 ```sh
-./llm benchmark speed muse-glimmer-30b kquant-17gb --speculative off
-./llm benchmark speed muse-glimmer-30b kquant-17gb --speculative compare
+./llm benchmark speed muse-glimmer-30b kquant-17gb
+./llm benchmark speed muse-glimmer-30b kquant-17gb --compare
 ```

@@ -38,14 +38,14 @@ The `llamacpp-muse` compatibility profile enables the embedded Jinja template
 and sets Muse's server-side reasoning strength.
 
 Tuned defaults: 32,768 context, 2,048 batch/micro-batch, F16 KV, Flash
-Attention, DFlash max 4, and high reasoning. Use `--speculative off` for
-target-only serving.
+Attention, DFlash max 4, and high reasoning. Speculative decoding is opt-in
+with `--speculative`.
 
 Common overrides: `LLM_CTX`, `LLM_BATCH`, `LLM_UBATCH`, `LLM_CACHE_TYPE`,
 `LLM_HOST`, `LLM_PORT`, `LLM_REASONING_STRENGTH`, and `LLM_SPECULATIVE`.
 
 ```sh
-./llm benchmark speed muse-glimmer-30b kquant-17gb --speculative compare
+./llm benchmark speed muse-glimmer-30b kquant-17gb --compare
 ```
 
 The comparison uses a fixed three-prompt generation suite with 512 output

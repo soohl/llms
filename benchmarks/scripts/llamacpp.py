@@ -36,6 +36,7 @@ def parse_args():
     parser.add_argument("--speculative-file", default="")
     parser.add_argument("--speculative-gpu-layers", default="99")
     parser.add_argument("--speculative-max-tokens", default="4")
+    parser.add_argument("--speculative-p-min", default="")
     parser.add_argument("--speculative-context", type=int, default=32768)
     parser.add_argument("--speculative-prompts")
     return parser.parse_args()
@@ -97,7 +98,11 @@ def server_command(args, port, context_size, speculative):
     if args.projector_file:
         command.extend(["--mmproj", args.projector_file])
     if speculative:
-        if args.speculative_kind != "dflash":
+        speculative_type = {
+            "dflash": "draft-dflash",
+            "mtp": "draft-mtp",
+        }.get(args.speculative_kind)
+        if speculative_type is None:
             raise SystemExit(
                 f"unsupported llama.cpp speculative type: "
                 f"{args.speculative_kind or 'none'}"
@@ -107,7 +112,7 @@ def server_command(args, port, context_size, speculative):
         command.extend(
             [
                 "--spec-type",
-                "draft-dflash",
+                speculative_type,
                 "--spec-draft-model",
                 args.speculative_file,
                 "--spec-draft-device",
@@ -118,6 +123,8 @@ def server_command(args, port, context_size, speculative):
                 args.speculative_max_tokens,
             ]
         )
+        if args.speculative_p_min:
+            command.extend(["--spec-draft-p-min", args.speculative_p_min])
     return command
 
 

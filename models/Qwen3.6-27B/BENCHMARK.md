@@ -50,6 +50,6 @@ suite, but had substantially lower acceptance and less consistent gains.
 | DFlash max 4 | Kept for 60.9% acceptance and consistent speedup |
 
 ```sh
-./llm benchmark speed qwen3.6-27b q4-k-m --speculative off
-./llm benchmark speed qwen3.6-27b q4-k-m --speculative compare
+./llm benchmark speed qwen3.6-27b q4-k-m
+./llm benchmark speed qwen3.6-27b q4-k-m --compare
 ```

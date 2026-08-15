@@ -11,45 +11,33 @@ Weights and backend checkouts stay untracked.
 ./llm download <model> <variant>
 ./llm download <model> <variant> --speculative
 ./llm download <model> <variant> --projector
-./llm serve <model> [variant]
-./llm benchmark speed <model> [variant]
+./llm serve <model> [variant] [--speculative]
+./llm benchmark speed <model> [variant] [--speculative|--compare]
 ./llm benchmark agentic <model> [variant]
 ./llm benchmark research <model> [variant]
 ```
 
-Muse example:
-
-```sh
-./llm setup muse-glimmer-30b
-./llm download muse-glimmer-30b kquant-17gb
-./llm download muse-glimmer-30b kquant-17gb --speculative
-./llm serve muse-glimmer-30b
-./llm benchmark speed muse-glimmer-30b
-```
-
 `serve` uses tuned values from the model's `model.conf`. `LLM_*` environment
-variables override them.
-
-Use `--speculative on|off` for serving. Speed benchmarks also accept
-`--speculative compare` to report target-only and model-specific speculative
-decoding over `benchmarks/speed/speculative.json`. Backend adapters own the
-runtime details; the top-level `llm` command discovers configuration variables
-dynamically and contains no backend-specific variable list.
+variables override them. Speculative decoding is opt-in: download its artifact
+and use `--speculative` to serve or benchmark it. Speed benchmark `--compare`
+reports target and speculative decoding over
+`benchmarks/speed/speculative.json`.
 
 ## Models
 
-| Model | Variant | Backend | Hardware | Docs |
-| --- | --- | --- | --- | --- |
-| DeepSeek V4 Flash 0731 | `q4`, `mxfp4` | `ds4` | Apple M3 Ultra, 256 GiB | [Guide](models/DeepSeek-V4-Flash-0731/README.md) · [Results](models/DeepSeek-V4-Flash-0731/BENCHMARK.md) |
-| Gemma 4 31B | `q4-0` | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Gemma-4-31B/README.md) · [Results](models/Gemma-4-31B/BENCHMARK.md) |
-| Muse Glimmer 30B | `kquant-17gb` + DFlash | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Muse-Glimmer-30B/README.md) · [Results](models/Muse-Glimmer-30B/BENCHMARK.md) |
-| Qwen3.6 27B | `q4-k-m` | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.6-27B/README.md) · [Results](models/Qwen3.6-27B/BENCHMARK.md) |
-| Qwen3.8 27B | `q4-k-m` | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.8-27B/README.md) · [Results](models/Qwen3.8-27B/BENCHMARK.md) |
-| Qwen3.8 27B Vision | `q4-k-m` + Q8_0 projector | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.8-27B-Vision/README.md) · [Results](models/Qwen3.8-27B-Vision/BENCHMARK.md) |
+| Model | Variant | Speculative model | Backend | Hardware | Docs |
+| --- | --- | --- | --- | --- | --- |
+| DeepSeek V4 Flash 0731 | `q4`, `mxfp4` | DSpark | `ds4` | Apple M3 Ultra, 256 GiB | [Guide](models/DeepSeek-V4-Flash-0731/README.md) · [Results](models/DeepSeek-V4-Flash-0731/BENCHMARK.md) |
+| Gemma 4 31B | `q4-0` | — | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Gemma-4-31B/README.md) · [Results](models/Gemma-4-31B/BENCHMARK.md) |
+| Muse Glimmer 30B | `kquant-17gb` | DFlash Q4_K_M | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Muse-Glimmer-30B/README.md) · [Results](models/Muse-Glimmer-30B/BENCHMARK.md) |
+| Qwen3.6 27B | `q4-k-m` | DFlash Q8_0 | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.6-27B/README.md) · [Results](models/Qwen3.6-27B/BENCHMARK.md) |
+| Qwen3.8 27B | `q4-k-m` | MTP Q4_0 | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.8-27B/README.md) · [Results](models/Qwen3.8-27B/BENCHMARK.md) |
+| Qwen3.8 27B Vision | `q4-k-m` + Q8_0 projector | — | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.8-27B-Vision/README.md) · [Results](models/Qwen3.8-27B-Vision/BENCHMARK.md) |
 
 The Qwen3.8 text and vision-language profiles share one Q4_K_M language-model
 file. The vision profile additionally loads the Q8_0 projector and can serve
-both text and image requests.
+both text and image requests. Speculative models in the table are optional and
+never loaded unless `--speculative` is passed.
 
 ## Layout
 
@@ -58,7 +46,7 @@ backends/scripts/       backend setup, serve, and benchmark adapters
 backends/config/        pinned backend revisions and build settings
 compat/                 reusable local API and chat-template profiles
 benchmarks/speed/       shared speed benchmark inputs
-benchmarks/scripts/     speed benchmark helpers
+benchmarks/scripts/     speed and local-server benchmark helpers
 benchmarks/agentic/     offline long-horizon agent tasks and results
 benchmarks/research/    web research tasks and results
 benchmarks/task_runner.py shared sandboxed task runner
@@ -108,7 +96,7 @@ no artifact.
 
 ```sh
 ./llm benchmark speed muse-glimmer-30b
-./llm benchmark speed muse-glimmer-30b kquant-17gb --speculative compare
+./llm benchmark speed muse-glimmer-30b kquant-17gb --compare
 ```
 
 ### Agentic ability

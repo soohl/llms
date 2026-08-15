@@ -94,11 +94,15 @@ case "${1:-}" in
                 "{\"reasoning_strength\":\"$reasoning\"}")
 
         if [ "$speculative" = on ]; then
-            [ "${LLAMACPP_SPECULATIVE_TYPE:-}" = dflash ] || {
-                printf 'Unsupported llama.cpp speculative type: %s\n' \
-                    "${LLAMACPP_SPECULATIVE_TYPE:-none}" >&2
-                exit 2
-            }
+            case "${LLAMACPP_SPECULATIVE_TYPE:-}" in
+                dflash) speculative_type=draft-dflash ;;
+                mtp) speculative_type=draft-mtp ;;
+                *)
+                    printf 'Unsupported llama.cpp speculative type: %s\n' \
+                        "${LLAMACPP_SPECULATIVE_TYPE:-none}" >&2
+                    exit 2
+                    ;;
+            esac
             draft="$GGUF_ROOT/${LLAMACPP_SPECULATIVE_FILE:-}"
             [ -n "${LLAMACPP_SPECULATIVE_FILE:-}" ] && [ -f "$draft" ] || {
                 printf 'Speculative model is missing. Run: ./llm download %s %s --speculative\n' \
@@ -106,13 +110,16 @@ case "${1:-}" in
                 exit 1
             }
             args+=(
-                --spec-type draft-dflash --spec-draft-model "$draft"
+                --spec-type "$speculative_type" --spec-draft-model "$draft"
                 --spec-draft-device "$device"
                 --spec-draft-ngl \
                     "${LLM_SPECULATIVE_GPU_LAYERS:-${LLAMACPP_SPECULATIVE_GPU_LAYERS:-$gpu_layers}}"
                 --spec-draft-n-max \
                     "${LLM_SPECULATIVE_MAX_TOKENS:-${LLAMACPP_SPECULATIVE_MAX_TOKENS:-4}}"
             )
+            speculative_p_min=${LLM_SPECULATIVE_P_MIN:-${LLAMACPP_SPECULATIVE_P_MIN:-}}
+            [ -z "$speculative_p_min" ] ||
+                args+=(--spec-draft-p-min "$speculative_p_min")
         fi
         exec "$server" "${args[@]}"
         ;;
@@ -169,7 +176,9 @@ case "${1:-}" in
             --speculative-gpu-layers \
             "${LLM_SPECULATIVE_GPU_LAYERS:-${LLAMACPP_SPECULATIVE_GPU_LAYERS:-${LLM_GPU_LAYERS:-${LLAMACPP_GPU_LAYERS:-99}}}}" \
             --speculative-max-tokens \
-            "${LLM_SPECULATIVE_MAX_TOKENS:-${LLAMACPP_SPECULATIVE_MAX_TOKENS:-4}}"
+            "${LLM_SPECULATIVE_MAX_TOKENS:-${LLAMACPP_SPECULATIVE_MAX_TOKENS:-4}}" \
+            --speculative-p-min \
+            "${LLM_SPECULATIVE_P_MIN:-${LLAMACPP_SPECULATIVE_P_MIN:-}}"
         )
         if [ "$speculative" = compare ]; then
             args+=(--speculative-context \

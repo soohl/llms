@@ -143,8 +143,8 @@ Usage:
   ./llm list
   ./llm setup <model>
   ./llm download <model> <variant> [--speculative|--projector]
-  ./llm serve <model> [variant] [--speculative on|off]
-  ./llm benchmark speed <model> [variant] [options]
+  ./llm serve <model> [variant] [--speculative]
+  ./llm benchmark speed <model> [variant] [--speculative|--compare]
   ./llm benchmark agentic <model> [variant] [options]
   ./llm benchmark research <model> [variant] [options]
   ./llm benchmark <agentic|research> report
@@ -390,15 +390,19 @@ parse_run_args() {
     while [ "$#" -gt 1 ]; do
         case "$2" in
             --speculative)
-                [ "$#" -ge 3 ] || {
-                    printf 'Missing value for --speculative.\n' >&2
+                [ -z "$RUN_SPECULATIVE" ] || {
+                    printf 'Speculative mode was specified more than once.\n' >&2
                     exit 2
                 }
-                RUN_SPECULATIVE=$3
-                shift 2
+                RUN_SPECULATIVE=on
+                shift
                 ;;
-            --speculative=*)
-                RUN_SPECULATIVE=${2#*=}
+            --compare)
+                [ -z "$RUN_SPECULATIVE" ] || {
+                    printf 'Speculative mode was specified more than once.\n' >&2
+                    exit 2
+                }
+                RUN_SPECULATIVE=compare
                 shift
                 ;;
             --*)
@@ -461,7 +465,7 @@ case "$command" in
         select_model "$2"
         load_compat_profile
         case "${RUN_SPECULATIVE:-}" in
-            ""|on|off) ;;
+            ""|on) ;;
             compare)
                 printf 'Speculative compare is benchmark-only.\n' >&2
                 exit 2
@@ -525,13 +529,8 @@ case "$command" in
                         exit 2
                         ;;
                 esac
-                agentic_port=$(python3 - <<'PY'
-import socket
-with socket.socket() as sock:
-    sock.bind(("127.0.0.1", 0))
-    print(sock.getsockname()[1])
-PY
-)
+                server_helper="$ROOT/benchmarks/scripts/local_server.py"
+                agentic_port=$(python3 "$server_helper" free-port)
                 agentic_url="http://127.0.0.1:$agentic_port/v1"
                 agentic_log=$(
                     mktemp "${TMPDIR:-/tmp}/llm-agentic-server.XXXXXX"
@@ -548,38 +547,10 @@ PY
                     rm -f "$agentic_log"
                 }
                 trap cleanup_agentic_server EXIT INT TERM
-                if ! python3 - "$agentic_server_pid" "$agentic_url" \
-                    "$API_MODEL_ID" <<'PY'
-import json
-import os
-import sys
-import time
-import urllib.error
-import urllib.request
-
-pid = int(sys.argv[1])
-url = sys.argv[2].rstrip("/") + "/models"
-model = sys.argv[3]
-deadline = time.monotonic() + 600
-while time.monotonic() < deadline:
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        raise SystemExit("local model server exited during startup")
-    try:
-        with urllib.request.urlopen(url, timeout=5) as response:
-            payload = json.load(response)
-        if model in {
-            item.get("id")
-            for item in payload.get("data", [])
-            if isinstance(item, dict)
-        }:
-            raise SystemExit(0)
-    except (OSError, ValueError, urllib.error.URLError):
-        pass
-    time.sleep(0.5)
-raise SystemExit("timed out waiting for the local model server")
-PY
+                if ! python3 "$server_helper" wait-ready \
+                    --pid "$agentic_server_pid" \
+                    --base-url "$agentic_url" \
+                    --model "$API_MODEL_ID"
                 then
                     printf '%s model server failed. Log: %s\n' \
                         "$benchmark_type" \
@@ -619,7 +590,7 @@ PY
                 parse_run_args "${@:3}"
                 select_model "$3"
                 case "${RUN_SPECULATIVE:-}" in
-                    ""|on|off|compare) ;;
+                    ""|on|compare) ;;
                     *)
                         printf 'Invalid speculative mode: %s\n' \
                             "$RUN_SPECULATIVE" >&2

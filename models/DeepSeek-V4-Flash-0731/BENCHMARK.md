@@ -74,5 +74,5 @@ decode only; model loading and prompt prefill are excluded.
 ```sh
 ./llm benchmark speed deepseek-v4-flash-0731 q4
 ./llm benchmark speed deepseek-v4-flash-0731 mxfp4
-./llm benchmark speed deepseek-v4-flash-0731 mxfp4 --speculative compare
+./llm benchmark speed deepseek-v4-flash-0731 mxfp4 --compare
 ```

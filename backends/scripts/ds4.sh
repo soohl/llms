@@ -64,7 +64,7 @@ case "${1:-}" in
         variant=$2
         speculative=${3:-${LLM_SPECULATIVE:-off}}
         [ "$speculative" != on ] || {
-            printf 'DS4 benchmarks support --speculative off or compare.\n' >&2
+            printf 'DS4 speed benchmarks support target-only or --compare.\n' >&2
             exit 2
         }
         require_ds4
