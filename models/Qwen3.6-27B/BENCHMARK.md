@@ -39,6 +39,17 @@ DFlash used 20,702 MiB VRAM. Four draft tokens were selected as the balanced
 setting: 8 and 16 reached slightly higher average throughput in this small
 suite, but had substantially lower acceptance and less consistent gains.
 
+## Vision
+
+The Q8_0 projector identified a generated solid-red PNG as `red`. The server
+used 20,024 MiB after the image request and decoded at 42.65 t/s with an
+8,192-token prompt. Vision plus DFlash also loaded successfully and used
+21,600 MiB.
+
+```sh
+./llm benchmark speed qwen3.6-27b q4-k-m --vision
+```
+
 ## Tuning decisions
 
 | Setting | Result |

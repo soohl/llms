@@ -22,7 +22,7 @@ State the licenses and access restrictions.
 ./llm setup <model>
 ./llm download <model> <variant>
 ./llm download <model> <variant> --speculative
-./llm download <model> <variant> --projector
+./llm download <model> <variant> --vision
 ./llm serve <model>
 ./llm benchmark speed <model>
 ./llm benchmark agentic <model>

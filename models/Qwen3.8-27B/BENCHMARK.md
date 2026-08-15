@@ -61,5 +61,27 @@ across all three prompts. Speculative decoding remains opt-in.
 ./llm benchmark speed qwen3.8-27b q4-k-m --compare
 ```
 
+## Vision
+
+The Q8_0 projector loaded successfully and identified a generated solid-red
+PNG as `Red`. It used 19,886 MiB after loading and 19,910 MiB after text and
+image requests, versus 19,034 MiB for text-only.
+
+Loading the projector had no meaningful effect on text decode in the measured
+runs:
+
+| Context | Text-only decode | Vision-loaded decode |
+| ---: | ---: | ---: |
+| 128 | 42.93 t/s | 43.03 t/s |
+| 8,192 | 41.68 t/s | 41.76 t/s |
+| 16,384 | 40.77 t/s | 40.81 t/s |
+
+No large-image throughput benchmark has been recorded.
+Vision plus MTP also loaded successfully and used 21,180 MiB.
+
+```sh
+./llm benchmark speed qwen3.8-27b q4-k-m --vision
+```
+
 Cross-model agentic and research results are consolidated in the
 [combined benchmark report](../../BENCHMARK.md).

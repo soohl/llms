@@ -10,9 +10,9 @@ Weights and backend checkouts stay untracked.
 ./llm setup <model>
 ./llm download <model> <variant>
 ./llm download <model> <variant> --speculative
-./llm download <model> <variant> --projector
-./llm serve <model> [variant] [--speculative]
-./llm benchmark speed <model> [variant] [--speculative|--compare]
+./llm download <model> <variant> --vision
+./llm serve <model> [variant] [--speculative] [--vision]
+./llm benchmark speed <model> [variant] [--speculative|--compare] [--vision]
 ./llm benchmark agentic <model> [variant]
 ./llm benchmark research <model> [variant]
 ```
@@ -25,19 +25,16 @@ reports target and speculative decoding over
 
 ## Models
 
-| Model | Variant | Speculative model | Backend | Hardware | Docs |
-| --- | --- | --- | --- | --- | --- |
-| DeepSeek V4 Flash 0731 | `q4`, `mxfp4` | DSpark | `ds4` | Apple M3 Ultra, 256 GiB | [Guide](models/DeepSeek-V4-Flash-0731/README.md) · [Results](models/DeepSeek-V4-Flash-0731/BENCHMARK.md) |
-| Gemma 4 31B | `q4-0` | — | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Gemma-4-31B/README.md) · [Results](models/Gemma-4-31B/BENCHMARK.md) |
-| Muse Glimmer 30B | `kquant-17gb` | DFlash Q4_K_M | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Muse-Glimmer-30B/README.md) · [Results](models/Muse-Glimmer-30B/BENCHMARK.md) |
-| Qwen3.6 27B | `q4-k-m` | DFlash Q8_0 | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.6-27B/README.md) · [Results](models/Qwen3.6-27B/BENCHMARK.md) |
-| Qwen3.8 27B | `q4-k-m` | MTP Q4_0 | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.8-27B/README.md) · [Results](models/Qwen3.8-27B/BENCHMARK.md) |
-| Qwen3.8 27B Vision | `q4-k-m` + Q8_0 projector | — | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.8-27B-Vision/README.md) · [Results](models/Qwen3.8-27B-Vision/BENCHMARK.md) |
+| Model | Variant | Speculative model | Vision projector | Backend | Hardware | Docs |
+| --- | --- | --- | --- | --- | --- | --- |
+| DeepSeek V4 Flash 0731 | `q4`, `mxfp4` | DSpark | — | `ds4` | Apple M3 Ultra, 256 GiB | [Guide](models/DeepSeek-V4-Flash-0731/README.md) · [Results](models/DeepSeek-V4-Flash-0731/BENCHMARK.md) |
+| Gemma 4 31B | `q4-0` | — | — | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Gemma-4-31B/README.md) · [Results](models/Gemma-4-31B/BENCHMARK.md) |
+| Muse Glimmer 30B | `kquant-17gb` | DFlash Q4_K_M | Q4_K_M | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Muse-Glimmer-30B/README.md) · [Results](models/Muse-Glimmer-30B/BENCHMARK.md) |
+| Qwen3.6 27B | `q4-k-m` | DFlash Q8_0 | Q8_0 | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.6-27B/README.md) · [Results](models/Qwen3.6-27B/BENCHMARK.md) |
+| Qwen3.8 27B | `q4-k-m` | MTP Q4_0 | Q8_0 | `llamacpp` | NVIDIA RTX 4090, 24 GB | [Guide](models/Qwen3.8-27B/README.md) · [Results](models/Qwen3.8-27B/BENCHMARK.md) |
 
-The Qwen3.8 text and vision-language profiles share one Q4_K_M language-model
-file. The vision profile additionally loads the Q8_0 projector and can serve
-both text and image requests. Speculative models in the table are optional and
-never loaded unless `--speculative` is passed.
+Speculative and vision artifacts are optional and loaded only with their
+corresponding flags.
 
 ## Layout
 
@@ -73,9 +70,8 @@ artifacts shared by all variants use `DOWNLOAD_SPECULATIVE_FILE` and
 corresponding size/SHA variables; a variant can override them with, for example,
 `DOWNLOAD_Q4_K_M_SPECULATIVE_FILE` and
 `DOWNLOAD_Q4_K_M_SPECULATIVE_SIZE`.
-Vision projectors use the equivalent `DOWNLOAD_PROJECTOR_*` variables and are
-downloaded with `--projector`. Related profiles can share artifacts by setting
-`MODEL_GGUF_DIR` to the same weights directory.
+Vision projectors use the equivalent `DOWNLOAD_VISION_*` variables and are
+downloaded with `--vision`.
 
 `setup` creates ignored source/build trees under `backends/`; `download` stores
 ignored weights under each model's `gguf/`. Temporary download and runtime

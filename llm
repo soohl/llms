@@ -62,17 +62,10 @@ load_model_config() {
     for variant in $VARIANTS; do
         download_config "$variant" target >/dev/null
         download_config "$variant" speculative >/dev/null || true
-        download_config "$variant" projector >/dev/null || true
+        download_config "$variant" vision >/dev/null || true
     done
 
-    if [ -n "${MODEL_GGUF_DIR:-}" ]; then
-        case "$MODEL_GGUF_DIR" in
-            /*) GGUF_ROOT=$MODEL_GGUF_DIR ;;
-            *) GGUF_ROOT="$MODEL_DIR/$MODEL_GGUF_DIR" ;;
-        esac
-    else
-        GGUF_ROOT="$MODEL_DIR/gguf"
-    fi
+    GGUF_ROOT="$MODEL_DIR/gguf"
     RUNTIME_ROOT="$MODEL_DIR/.runtime"
     BACKEND_ROOT="$ROOT/backends/$BACKEND"
     BACKEND_ADAPTER="$ROOT/backends/scripts/$BACKEND.sh"
@@ -142,9 +135,9 @@ Local LLM runner
 Usage:
   ./llm list
   ./llm setup <model>
-  ./llm download <model> <variant> [--speculative|--projector]
-  ./llm serve <model> [variant] [--speculative]
-  ./llm benchmark speed <model> [variant] [--speculative|--compare]
+  ./llm download <model> <variant> [--speculative|--vision]
+  ./llm serve <model> [variant] [--speculative] [--vision]
+  ./llm benchmark speed <model> [variant] [--speculative|--compare] [--vision]
   ./llm benchmark agentic <model> [variant] [options]
   ./llm benchmark research <model> [variant] [options]
   ./llm benchmark <agentic|research> report
@@ -235,15 +228,15 @@ download_config() {
                 prefix=DOWNLOAD_SPECULATIVE
             fi
             ;;
-        projector)
-            prefix="DOWNLOAD_${key}_PROJECTOR"
+        vision)
+            prefix="DOWNLOAD_${key}_VISION"
             variant_file_name="${prefix}_FILE"
             variant_size_name="${prefix}_SIZE"
             variant_sha_name="${prefix}_SHA256"
             if [ -z "${!variant_file_name:-}" ] &&
                [ -z "${!variant_size_name:-}" ] &&
                [ -z "${!variant_sha_name:-}" ]; then
-                prefix=DOWNLOAD_PROJECTOR
+                prefix=DOWNLOAD_VISION
             fi
             ;;
         *)
@@ -339,17 +332,17 @@ download_model() {
     if [ "$wanted_kind" = speculative ] &&
        [ -n "${SPECULATIVE_HF_REPO:-}" ]; then
         repo=$SPECULATIVE_HF_REPO
-    elif [ "$wanted_kind" = projector ] &&
-         [ -n "${PROJECTOR_HF_REPO:-}" ]; then
-        repo=$PROJECTOR_HF_REPO
+    elif [ "$wanted_kind" = vision ] &&
+         [ -n "${VISION_HF_REPO:-}" ]; then
+        repo=$VISION_HF_REPO
     fi
     revision=${TARGET_HF_REVISION:-}
     if [ "$wanted_kind" = speculative ] &&
        [ -n "${SPECULATIVE_HF_REVISION:-}" ]; then
         revision=$SPECULATIVE_HF_REVISION
-    elif [ "$wanted_kind" = projector ] &&
-         [ -n "${PROJECTOR_HF_REVISION:-}" ]; then
-        revision=$PROJECTOR_HF_REVISION
+    elif [ "$wanted_kind" = vision ] &&
+         [ -n "${VISION_HF_REVISION:-}" ]; then
+        revision=$VISION_HF_REVISION
     fi
     args=(
         download "$repo" "$file"
@@ -375,18 +368,20 @@ run_backend() {
     action=$1
     variant=${2:-}
     speculative=${3:-}
+    vision=${4:-}
     [ -x "$BACKEND_ADAPTER" ] || {
         printf 'Backend adapter is missing: %s\n' "$BACKEND_ADAPTER" >&2
         exit 1
     }
     export ROOT MODEL_DIR GGUF_ROOT RUNTIME_ROOT BACKEND_ROOT
-    exec "$BACKEND_ADAPTER" "$action" "$variant" "$speculative"
+    exec "$BACKEND_ADAPTER" "$action" "$variant" "$speculative" "$vision"
 }
 
 parse_run_args() {
     [ "$#" -ge 1 ] || { usage >&2; exit 2; }
     RUN_VARIANT=
     RUN_SPECULATIVE=
+    RUN_VISION=
     while [ "$#" -gt 1 ]; do
         case "$2" in
             --speculative)
@@ -403,6 +398,14 @@ parse_run_args() {
                     exit 2
                 }
                 RUN_SPECULATIVE=compare
+                shift
+                ;;
+            --vision)
+                [ -z "$RUN_VISION" ] || {
+                    printf 'Vision mode was specified more than once.\n' >&2
+                    exit 2
+                }
+                RUN_VISION=on
                 shift
                 ;;
             --*)
@@ -449,7 +452,7 @@ case "$command" in
         if [ "$#" -eq 4 ]; then
             case "$4" in
                 --speculative) download_kind=speculative ;;
-                --projector) download_kind=projector ;;
+                --vision) download_kind=vision ;;
                 *)
                     printf 'Unknown download option: %s\n' "$4" >&2
                     exit 2
@@ -476,8 +479,12 @@ case "$command" in
                 exit 2
                 ;;
         esac
+        if [ "${RUN_VISION:-}" = on ] && [ -z "${VISION_FILE:-}" ]; then
+            printf 'Vision is not configured for model: %s\n' "$MODEL_ID" >&2
+            exit 2
+        fi
         run_variant=$(resolve_variant "$RUN_VARIANT")
-        run_backend serve "$run_variant" "$RUN_SPECULATIVE"
+        run_backend serve "$run_variant" "$RUN_SPECULATIVE" "$RUN_VISION"
         ;;
     benchmark)
         benchmark_type=${2:-}
@@ -597,8 +604,15 @@ case "$command" in
                         exit 2
                         ;;
                 esac
+                if [ "${RUN_VISION:-}" = on ] &&
+                   [ -z "${VISION_FILE:-}" ]; then
+                    printf 'Vision is not configured for model: %s\n' \
+                        "$MODEL_ID" >&2
+                    exit 2
+                fi
                 run_variant=$(resolve_variant "$RUN_VARIANT")
-                run_backend benchmark "$run_variant" "$RUN_SPECULATIVE"
+                run_backend benchmark "$run_variant" "$RUN_SPECULATIVE" \
+                    "$RUN_VISION"
                 ;;
             *)
                 printf 'Unknown benchmark type: %s (use speed, agentic, or research).\n\n' \

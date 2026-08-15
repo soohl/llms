@@ -40,6 +40,17 @@ Fixed technical, coding, and analysis prompts from
 DFlash benefits longer, structured generation when its draft acceptance is
 high. It does not improve prefill and may regress on low-acceptance text.
 
+## Vision
+
+The Q4_K_M projector identified a generated solid-red PNG as `red`. The server
+used 18,644 MiB after the image request and decoded at 48.86 t/s with an
+8,192-token prompt. Vision plus DFlash also loaded successfully and used
+22,152 MiB.
+
+```sh
+./llm benchmark speed muse-glimmer-30b kquant-17gb --vision
+```
+
 ## Tuning decisions
 
 | Setting | Result |

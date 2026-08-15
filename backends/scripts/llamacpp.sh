@@ -49,13 +49,19 @@ case "${1:-}" in
     serve)
         variant=$2
         speculative=${3:-${LLM_SPECULATIVE:-${LLAMACPP_SPECULATIVE_DEFAULT:-off}}}
+        vision=${4:-${LLM_VISION:-off}}
         require_llamacpp
         model=$(model_path "$variant")
         projector=
-        if [ -n "${LLAMACPP_PROJECTOR_FILE:-}" ]; then
-            projector="$GGUF_ROOT/$LLAMACPP_PROJECTOR_FILE"
+        if [ "$vision" = on ]; then
+            [ -n "${VISION_FILE:-}" ] || {
+                printf 'Vision is not configured for model: %s\n' \
+                    "$MODEL_ID" >&2
+                exit 2
+            }
+            projector="$GGUF_ROOT/$VISION_FILE"
             [ -f "$projector" ] || {
-                printf 'Vision projector is missing. Run: ./llm download %s %s --projector\n' \
+                printf 'Vision projector is missing. Run: ./llm download %s %s --vision\n' \
                     "$MODEL_ID" "$variant" >&2
                 exit 1
             }
@@ -126,14 +132,20 @@ case "${1:-}" in
     benchmark)
         variant=$2
         speculative=${3:-${LLM_SPECULATIVE:-off}}
+        vision=${4:-${LLM_VISION:-off}}
         require_llamacpp
         require_command python3
         model=$(model_path "$variant")
         projector=
-        if [ -n "${LLAMACPP_PROJECTOR_FILE:-}" ]; then
-            projector="$GGUF_ROOT/$LLAMACPP_PROJECTOR_FILE"
+        if [ "$vision" = on ]; then
+            [ -n "${VISION_FILE:-}" ] || {
+                printf 'Vision is not configured for model: %s\n' \
+                    "$MODEL_ID" >&2
+                exit 2
+            }
+            projector="$GGUF_ROOT/$VISION_FILE"
             [ -f "$projector" ] || {
-                printf 'Vision projector is missing. Run: ./llm download %s %s --projector\n' \
+                printf 'Vision projector is missing. Run: ./llm download %s %s --vision\n' \
                     "$MODEL_ID" "$variant" >&2
                 exit 1
             }
